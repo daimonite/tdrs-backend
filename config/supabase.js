@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
 
-const supabaseUrl = process.env.SUPABASE_URL || 'https://bwvjpglutwivmisqzbyo.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || 'REMOVED';
+const supabaseUrl = process.env.SUPABASE_URL ;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY ;
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn('⚠️ Supabase credentials missing. Some database operations may fail.');

@@ -1,6 +1,0 @@
-{
-  "name": "Tour de Rotary DSM - Backend Architecture & Developer Workbench",
-  "description": "Comprehensive backend specification, PostgreSQL schema generator, PayMe & SMS integration pipelines, 5 RBAC portals, and interactive simulators for Tour de Rotary DSM event platform.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

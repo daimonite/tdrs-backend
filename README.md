@@ -209,8 +209,13 @@ cp .env.example .env
 PORT=8800
 NODE_ENV=production
 APP_URL=https://api.tourderotary.co.tz
+# Comma-separated list of allowed frontend origins (required in production —
+# wildcard "*" is not compatible with credentialed/cookie-based auth)
+ALLOWED_ORIGINS=https://tourderotary.co.tz,https://admin.tourderotary.co.tz
 
 # --- Supabase / PostgreSQL 16 Database ---
+# Auth is verified directly against Supabase Auth (supabase.auth.getUser),
+# so no separate JWT signing secret is needed here.
 DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
 SUPABASE_URL=https://[PROJECT-REF].supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_public_key
@@ -233,11 +238,9 @@ RESEND_API_KEY=your_resend_api_key
 EMAIL_FROM="Tour de Rotary DSM <tickets@tourderotary.co.tz>"
 
 # --- Strava API (Athlete Fitness Training Sync) ---
+# Deferred per Schedule A11, pending third-party approval — safe to leave blank
 STRAVA_CLIENT_ID=your_strava_app_client_id
 STRAVA_CLIENT_SECRET=your_strava_app_client_secret
-
-# --- JWT Secret for RBAC Auth ---
-JWT_SECRET=your_super_secure_jwt_signing_secret_key_2026
 ```
 
 ---
@@ -364,76 +367,122 @@ server {
 
 ---
 
+## 🔑 Authentication — Frontend Integration Guide
+
+This API does **not** issue its own accounts or trust any client-supplied
+identity header. Authentication is handled by **Supabase Auth**; this
+backend only verifies the token Supabase gives you.
+
+**Flow for the frontend:**
+1. Use the Supabase JS client (`@supabase/supabase-js`) directly in the
+   frontend to sign up / log in (`supabase.auth.signUp()`,
+   `supabase.auth.signInWithPassword()`, magic links, OAuth, etc.).
+2. Supabase returns a session containing an `access_token`.
+3. Send that token on every request to a protected endpoint:
+   `Authorization: Bearer <access_token>`
+   (or as an httpOnly `accessToken` cookie, if the web dashboard sets one)
+4. The backend calls `supabase.auth.getUser(token)` to verify it, then
+   looks up the caller's role from the `profiles` table. **The backend
+   never trusts a role sent by the client** — there is no `x-user-role`
+   header or similar shortcut, on any endpoint.
+
+**Which endpoints need a token:** everything except the ones explicitly
+marked `public` below (activity/merch listings, checkout/registration,
+payment webhook + status/retry, collectible verification by hash, social
+share pages, survey submission).
+
+**Registration note:** there is no separate "create account" endpoint on
+this API. A participant's `profiles` row is created automatically the
+first time they check out (`POST /api/v1/cart/checkout`). If you also want
+them to be able to log back in later (view past orders, portal access,
+etc.), call `supabase.auth.signUp()` with the same email separately — the
+two are independent right now and should use matching emails.
+
+---
+
 ## 📡 Complete REST API Reference
+*(Verified against the actual route files — path, method, and auth
+requirement for every mounted endpoint.)*
 
-### 1. Public & Activities
+### 1. Public & Activities — *no auth*
 - `GET /api/v1/activities` — List 2026 activities with pricing and remaining capacity.
-- `GET /api/v1/activities/:id` — Activity details, start times, route distances, and GPX coordinates.
+- `GET /api/v1/activities/:id` — Activity details, start times, route distances, GPX coordinates.
 
-### 2. Cart, Checkout & Reservations
-- `POST /api/v1/cart/checkout` — Create order, reserve inventory, and lock 7-day apparel window.
+### 2. Cart, Checkout & Merchandise — *no auth (guest checkout / registration)*
+- `POST /api/v1/cart/checkout` — Create order, create/find participant profile, reserve inventory (7-day apparel hold).
 - `GET /api/v1/merchandise` — List official cycling jerseys, bib shorts, and gear.
 - `GET /api/v1/merchandise/:id` — Product sizing and inventory variants.
 
-### 3. Payments & Webhooks (PayMe Africa)
+### 3. Payments & Webhooks (PayMe Africa) — *no auth, scoped by order_number*
 - `POST /api/v1/payments/initiate` — Trigger USSD push for M-Pesa, Tigo Pesa, or Airtel Money.
-- `POST /api/v1/payments/payme/webhook` — Process HMAC-signed payment callback, complete reservation, issue tickets.
+- `POST /api/v1/payments/payme/webhook` — HMAC-signed server-to-server callback from PayMe (not for frontend use).
 - `GET /api/v1/payments/status/:order_number` — Query order payment status.
 - `POST /api/v1/payments/retry` — Re-initiate payment push for unpaid orders.
 
-### 4. Tickets & Gate Verification
-- `GET /api/v1/tickets` — Query tickets for authenticated user (`x-user-email`).
-- `GET /api/v1/tickets/qr/:qr_token` — Query ticket validity by QR verification token.
-- `POST /api/v1/tickets/checkin` — Race marshal gate scanner endpoint. Validates token and marks checked-in.
+### 4. Tickets & Gate Verification — *auth required*
+- `GET /api/v1/tickets` — Tickets for the authenticated user (identity from verified token, not a header).
+- `GET /api/v1/tickets/qr/:qr_token` — Query ticket validity by QR verification token. *(auth required)*
+- `POST /api/v1/tickets/checkin` — Gate scanner check-in. Requires `volunteer` or `admin` role.
 
-### 5. Participant Self-Service Portal
-- `GET /api/v1/participant/profile` — Participant details, medical contacts, registered activities count.
-- `PUT /api/v1/participant/profile` — Update emergency contact and t-shirt size.
+### 5. Participant Self-Service Portal — *auth required, all endpoints*
+- `GET /api/v1/participant/profile` — Participant details, medical contacts, registered activities.
+- `PUT /api/v1/participant/profile` — Update emergency contact, t-shirt size, etc.
 - `GET /api/v1/participant/orders` — Order history and payment status.
 - `GET /api/v1/participant/tickets` — Issued QR passes.
-- `GET /api/v1/participant/training` — Weekly training distance & Strava sync status.
+- `GET /api/v1/participant/certificates` — Earned digital collectibles/certificates.
+- `GET /api/v1/participant/training` — Weekly training distance & Strava sync status (placeholder pending Strava approval, see A11).
 - `GET /api/v1/participant/wishlist` — Saved merchandise.
-- `POST /api/v1/participant/wishlist/toggle` — Add/remove merchandise from athlete wishlist.
-- `GET /api/v1/participant/orders/:order_id/tracking` — Merchandise pickup station tracking.
-- `POST /api/v1/participant/orders/:order_id/pickup` — Confirm expo merchandise collection.
+- `POST /api/v1/participant/wishlist/toggle` — Add/remove merchandise from wishlist.
+- `GET /api/v1/participant/orders/:order_id/tracking` — Order tracking (owner or staff only).
+- `POST /api/v1/participant/orders/:order_id/pickup` — Confirm merchandise pickup. Requires `volunteer` or `admin` role (pickup-desk action, not self-serve).
+- `GET /api/v1/participant/preferences` / `PUT /api/v1/participant/preferences` — Communication preferences.
 
-### 6. Dedicated 5-Role Portals (RBAC)
-- `GET /api/v1/volunteer/shift` — Assigned marshal station, shift hours, and coordinator contacts.
-- `GET /api/v1/volunteer/notices` — HQ event briefings and route bulletins.
-- `POST /api/v1/volunteer/checkin-ticket` — Gate scanner access for volunteer marshals.
-- `GET /api/v1/sponsor/portal` — Sponsor tier deliverables and activation overview.
-- `GET /api/v1/sponsor/assets` — Sponsor vector logo upload and asset directory.
-- `GET /api/v1/partner/clearances` — Emergency medical (hospital) routes and police motorcade clearances.
-- `POST /api/v1/partner/submissions` — Partner operational documents submission.
+### 6. Dedicated Role Portals — *auth required, role-restricted*
+- `GET /api/v1/volunteer/shift` — Requires `volunteer` or `admin`. Assigned station, role, shift times.
+- `POST /api/v1/volunteer/briefing/acknowledge` — Requires `volunteer` or `admin`.
+- `POST /api/v1/volunteer/checkin-ticket` — Requires `volunteer` or `admin`.
+- `GET /api/v1/sponsor/portal` — Requires `sponsor` or `admin`. Tier, deliverables, VIP passes.
+- `POST /api/v1/sponsor/logo/upload` — Requires `sponsor` or `admin`.
+- `GET /api/v1/partner/clearances` — Requires `partner` or `admin`. Logistics/safety clearance records.
+- `POST /api/v1/partner/clearances/update` — Requires `partner` or `admin`.
 
-### 7. HQ Admin Command Centre
-- `GET /api/v1/admin/overview` — Executive KPIs: registrations, revenue, tickets issued, reservations.
-- `GET /api/v1/admin/orders` — Manage orders and update delivery/payment states.
-- `GET /api/v1/admin/inventory` — Monitor stock levels and active 7-day reservations.
+  > ⚠️ Partner routes currently cover logistics/safety partners only
+  > (ambulance, police escort, route clearance). Marketing/collaboration
+  > partner features from Schedule A5 (profile, campaign materials,
+  > submissions, referral tracking) are **not yet built** — flag with
+  > whoever owns the SOW before the frontend depends on them.
+
+### 7. HQ Admin Command Centre — *auth required, `admin` only*
+- `GET /api/v1/admin/overview` (alias: `/dashboard/overview`) — Executive KPIs: registrations, revenue, tickets issued.
+- `PATCH /api/v1/admin/events/phase` — Update event phase (pre-event/live/post-event).
+- `POST /api/v1/admin/broadcast/sms` — Queue an SMS broadcast to a target group (now actually enqueues to `communication_queue`, dispatched by the background worker).
+- `GET /api/v1/admin/orders` / `PATCH /api/v1/admin/orders/:id/status` — List / update orders.
+- `GET /api/v1/admin/users` / `PATCH /api/v1/admin/users/:id/role` — User directory / role promotion.
+- `GET /api/v1/admin/inventory` — Stock levels and active 7-day reservations.
 - `POST /api/v1/admin/inventory/release-expired` — Manual trigger to release expired merchandise holds.
-- `GET /api/v1/admin/promo-codes` — List active promotional discount codes.
-- `POST /api/v1/admin/promo-codes` — Create promotional discount code with usage limits.
-- `GET /api/v1/admin/refunds` — Query refund requests.
-- `POST /api/v1/admin/refunds/:id/process` — Process refund and restore ticket/stock allocations.
-- `GET /api/v1/admin/audit-logs` — Administrative security audit trail.
+- `GET /api/v1/admin/content` / `PUT /api/v1/admin/content` — Site content (CMS) blocks; `PUT` accepts `content_key`, `section`, `value_json`, optional `visible_from`/`visible_until` for scheduled publishing.
+- `GET /api/v1/admin/audit-logs` — Administrative audit trail (now records real actor identity via `actor_profile_id`/`actor_role`).
+- `GET /api/v1/admin/promo-codes` / `POST /api/v1/admin/promo-codes` — List / create promo codes.
+- `GET /api/v1/admin/capacities` / `PATCH /api/v1/admin/capacities/:id` — Activity capacity controls.
+- `GET /api/v1/admin/refunds` / `POST /api/v1/admin/refunds/:id/process` — Query / process refunds.
 
 ### 8. Digital Collectibles & Social Assets
-- `GET /api/v1/collectibles/mine` — Athlete finisher certificates and badges.
-- `GET /api/v1/collectibles/verify/:hash` — Tamper-proof public verification by SHA-256 hash.
-- `GET /api/v1/social/twibbon/frames` — Available social frame overlays.
-- `POST /api/v1/social/twibbon/generate` — Generate custom Twibbon badge.
-- `GET /api/v1/social/og/:bib` — Open Graph share banner for social media.
+- `GET /api/v1/collectibles/my-certificate` — *auth required.* Athlete's finisher certificate/badge.
+- `GET /api/v1/collectibles/verify/:hash` — *no auth.* Public tamper-proof verification by hash (for QR codes).
+- `GET /api/v1/social/twibbon/frames` — *no auth.* Available social frame overlays.
+- `POST /api/v1/social/twibbon/generate` — *no auth.* Generate custom Twibbon badge.
+- `GET /api/v1/social/og/:bib_or_id` — *no auth.* Open Graph share banner for social media.
 
-### 9. Communications Engine
+### 9. Communications Engine — *auth required, `admin` only*
 - `GET /api/v1/communications/templates` — SMS and email notification templates.
 - `POST /api/v1/communications/preview` — Render template with sample merge tags.
-- `POST /api/v1/communications/send-test` — Dispatch live SMS/email test message.
+- `POST /api/v1/communications/send-test` — Dispatch a live SMS/email test message.
 - `GET /api/v1/communications/logs` — Outgoing communication dispatch history.
 
 ### 10. Schedule C Post-Event Impact & Evaluation
-- `POST /api/v1/evaluation/survey` — Submit athlete post-event evaluation and NPS score.
-- `GET /api/v1/evaluation/results` — Analytical breakdown of survey feedback and ratings.
-- `GET /api/v1/evaluation/impact-report` — Schedule C maternal health charity impact metrics.
+- `POST /api/v1/evaluation/survey` — *no auth (accepts anonymous submissions).* Post-event evaluation and NPS score.
+- `GET /api/v1/evaluation/results` — *auth required, `admin` only.* Survey feedback breakdown.
+- `GET /api/v1/evaluation/impact-report` — *auth required, `admin` only.* Schedule C impact metrics.
 
 ---
 

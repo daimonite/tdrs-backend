@@ -13,8 +13,12 @@ import {
   getParticipantPreferences,
   updateParticipantPreferences
 } from '../controllers/participantController.js';
+import auth from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
 
 const router = express.Router();
+
+router.use(auth());
 
 router.get('/profile', getParticipantProfile);
 router.put('/profile', updateParticipantProfile);
@@ -25,7 +29,9 @@ router.get('/training', getParticipantTraining);
 router.get('/wishlist', getParticipantWishlist);
 router.post('/wishlist/toggle', toggleWishlistItem);
 router.get('/orders/:order_id/tracking', getParticipantOrderTracking);
-router.post('/orders/:order_id/pickup', confirmMerchandisePickup);
+// Pickup confirmation is performed by pickup-desk staff scanning a
+// participant's order, not by the participant themselves.
+router.post('/orders/:order_id/pickup', requireRole(['volunteer', 'admin']), confirmMerchandisePickup);
 router.get('/preferences', getParticipantPreferences);
 router.put('/preferences', updateParticipantPreferences);
 

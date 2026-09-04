@@ -1,32 +1,74 @@
-import jwt from 'jsonwebtoken';
+import { supabase } from '../config/supabase.js';
 
-const auth = (restrictToAdmin = false) => {
-  return (req, res, next) => {
-    // Accept cookie (web dashboard) OR Authorization: Bearer <token> (mobile)
-    let token = req.cookies?.accessToken;
-
-    if (!token) {
-      const authHeader = req.headers['authorization'];
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.slice(7);
-      }
-    }
-
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
+/**
+ * Authentication middleware.
+ *
+ * Verifies the caller's Supabase access token against Supabase Auth itself
+ * (rather than re-implementing JWT verification), then resolves the
+ * caller's application role from the `profiles` table — never from a
+ * client-supplied header. `req.user` is only ever set here, after the
+ * token has been independently verified.
+ *
+ * Accepts the token either as an httpOnly cookie (`accessToken`, used by
+ * the web dashboard) or as `Authorization: Bearer <token>` (used by
+ * mobile / API clients).
+ */
+const auth = () => {
+  return async (req, res, next) => {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = decoded;
+      let token = req.cookies?.accessToken;
 
-      if (restrictToAdmin && decoded.role !== 'main-agent') {
-        return res.status(403).json({ error: 'Admin access required' });
+      if (!token) {
+        const authHeader = req.headers['authorization'];
+        if (authHeader?.startsWith('Bearer ')) {
+          token = authHeader.slice(7);
+        }
       }
+
+      if (!token) {
+        return res.status(401).json({ error: 'No token provided' });
+      }
+
+      // Verify the token directly with Supabase Auth. This confirms the
+      // token is genuine and unexpired without the backend needing to
+      // manage its own JWT signing secret.
+      const { data: authData, error: authError } = await supabase.auth.getUser(token);
+
+      if (authError || !authData?.user) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
+
+      const authUser = authData.user;
+
+      // Resolve the application role from our own profiles table — this is
+      // the single source of truth for authorization, never the client.
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, role, full_name, email')
+        .eq('auth_user_id', authUser.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('[auth] Failed to resolve profile for authenticated user:', profileError.message);
+        return res.status(500).json({ error: 'Failed to resolve user profile' });
+      }
+
+      if (!profile) {
+        return res.status(403).json({ error: 'No profile found for authenticated account' });
+      }
+
+      req.user = {
+        id: profile.id,
+        authUserId: authUser.id,
+        email: profile.email,
+        role: profile.role,
+        fullName: profile.full_name
+      };
 
       next();
     } catch (err) {
-      res.status(401).json({ error: 'Invalid token' });
+      console.error('[auth] Unexpected error:', err.message || err);
+      return res.status(401).json({ error: 'Authentication failed' });
     }
   };
 };

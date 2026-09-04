@@ -8,7 +8,7 @@ import {
   getUsersList,
   updateUserRole,
   getInventoryStatus,
-  releaseExpiredLocks,
+  releaseExpiredReservationsNow,
   getContentCMS,
   updateContentCMS,
   getAuditLogs,
@@ -20,9 +20,11 @@ import {
   processRefundRequest
 } from '../controllers/adminController.js';
 import { requireRole } from '../middleware/rbac.js';
+import auth from '../middleware/auth.js';
 
 const router = express.Router();
 
+router.use(auth());
 router.use(requireRole(['admin']));
 
 router.get('/dashboard/overview', getDashboardOverview);
@@ -40,7 +42,7 @@ router.patch('/users/:id/role', updateUserRole);
 
 // Inventory & 7-Day Hold Control
 router.get('/inventory', getInventoryStatus);
-router.post('/inventory/release-expired', releaseExpiredLocks);
+router.post('/inventory/release-expired', releaseExpiredReservationsNow);
 
 // CMS Content Management
 router.get('/content', getContentCMS);

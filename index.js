@@ -27,15 +27,30 @@ import fitnessRoutes from './routes/fitnessRoutes.js';
 // Middleware & Workers
 import errorHandler from './middleware/errorHandler.js';
 import { runInventoryReservationWorker } from './services/inventoryReservationWorker.js';
+import { runCommunicationDispatchWorker } from './services/communicationDispatchWorker.js';
 
 const app = express();
 
 // Security and middleware
 app.use(helmet());
+
+// NOTE: origin '*' combined with credentials:true is invalid per the CORS
+// spec and browsers will reject it, silently breaking cookie-based auth.
+// Configure ALLOWED_ORIGINS as a comma-separated list in .env for
+// production (e.g. "https://tourderotary.co.tz,https://admin.tourderotary.co.tz").
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: '*',
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  // x-user-role is accepted for backward compatibility with existing
+  // clients but is no longer trusted for authorization decisions — see
+  // middleware/rbac.js, which resolves role only from the verified
+  // req.user set by middleware/auth.js.
   allowedHeaders: ['Content-Type', 'Authorization', 'x-payme-signature', 'x-user-role']
 }));
 
@@ -55,17 +70,19 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/v1/health', (req, res) => {
+  const isConfigured = (val) => Boolean(val) && !val.includes('your_') && !val.startsWith('demo_');
+
   res.json({
     status: 'healthy',
     environment: process.env.NODE_ENV || 'development',
     database: 'Supabase PostgreSQL 16',
     edition: 'Tour de Rotary DSM 2026',
     integrations: {
-      payme_africa: 'READY',
-      textify_sms: 'READY',
-      resend_email: 'READY',
-      strava_sync: 'READY',
-      polygon_certificates: 'READY'
+      payme_africa: isConfigured(process.env.PAYME_API_KEY) ? 'READY' : 'NOT_CONFIGURED',
+      textify_sms: isConfigured(process.env.TEXTIFY_API_KEY) ? 'READY' : 'NOT_CONFIGURED',
+      resend_email: isConfigured(process.env.RESEND_API_KEY) ? 'READY' : 'NOT_CONFIGURED',
+      strava_sync: isConfigured(process.env.STRAVA_CLIENT_ID) ? 'READY' : 'NOT_CONFIGURED',
+      polygon_certificates: isConfigured(process.env.POLYGON_RPC_URL) ? 'READY' : 'NOT_CONFIGURED'
     }
   });
 });
@@ -97,6 +114,18 @@ setInterval(async () => {
     console.error('Inventory worker cycle error:', err);
   }
 }, 10 * 60 * 1000);
+
+// Background Worker: Communication Queue Dispatcher
+// Drains due SMS/Email items from communication_queue (scheduled reminders,
+// broadcasts, confirmations). Runs frequently since messages are often
+// time-sensitive (e.g. event-day briefings).
+setInterval(async () => {
+  try {
+    await runCommunicationDispatchWorker();
+  } catch (err) {
+    console.error('Communication dispatch worker cycle error:', err);
+  }
+}, 60 * 1000);
 
 // Global Error Handler
 app.use(errorHandler);

@@ -34,24 +34,7 @@ if (connectionString && connectionString.startsWith('postgres')) {
       console.warn('⚠️ Direct PostgreSQL connection inactive (using Supabase REST client):', error.message || error);
     });
 } else {
-  console.log('ℹ️ DATABASE_URL not provided; defaulting to Supabase JS Client & resilient in-memory fallbacks.');
-  // Safe proxy to prevent crashes when DATABASE_URL is not configured yet
-  const dummyHandler = {
-    get: (target, prop) => {
-      if (typeof prop === 'string') {
-        return async (...args) => {
-          // Return empty results for typical pg-promise calls
-          if (prop === 'one') return { total: 0 };
-          if (prop === 'oneOrNone') return null;
-          if (prop === 'manyOrNone' || prop === 'any') return [];
-          if (prop === 'none') return null;
-          return [];
-        };
-      }
-      return target[prop];
-    }
-  };
-  db = new Proxy({}, dummyHandler);
+  throw new Error('[config/database.js] DATABASE_URL is required for direct PostgreSQL access.');
 }
 
 export default db;

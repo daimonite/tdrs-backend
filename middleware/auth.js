@@ -45,7 +45,7 @@ const auth = () => {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('id, role, full_name, email')
-        .eq('auth_user_id', authUser.id)
+        .or(`auth_user_id.eq.${authUser.id},id.eq.${authUser.id}`)
         .maybeSingle();
 
       if (profileError) {
@@ -61,7 +61,9 @@ const auth = () => {
         id: profile.id,
         authUserId: authUser.id,
         email: profile.email,
-        role: profile.role,
+        // The frontend calls its HQ role `hq_admin`; backend route guards
+        // consistently use `admin`.
+        role: profile.role === 'hq_admin' ? 'admin' : profile.role,
         fullName: profile.full_name
       };
 

@@ -23,6 +23,7 @@ import partnerRoutes from './routes/partnerRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import collectibleRoutes from './routes/collectibleRoutes.js';
 import fitnessRoutes from './routes/fitnessRoutes.js';
+import newsletterRoutes from './routes/newsletterRoutes.js';
 
 // Middleware & Workers
 import errorHandler from './middleware/errorHandler.js';
@@ -104,6 +105,7 @@ app.use('/api/v1/partner', partnerRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/collectibles', collectibleRoutes);
 app.use('/api/v1/fitness', fitnessRoutes);
+app.use('/api/v1/newsletter', newsletterRoutes);
 
 // Background Worker: 7-Day Merchandise Reservation & Expiry Auto-Release Engine
 // Runs every 10 minutes in dev / 1 hour in prod

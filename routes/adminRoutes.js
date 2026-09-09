@@ -1,7 +1,7 @@
 import express from 'express';
-import { 
-  getDashboardOverview, 
-  updateEventPhase, 
+import {
+  getDashboardOverview,
+  updateEventPhase,
   broadcastAnnouncementSms,
   getOrdersList,
   updateOrderStatus,
@@ -17,7 +17,11 @@ import {
   getActivityCapacities,
   updateActivityCapacity,
   getRefundRequests,
-  processRefundRequest
+  processRefundRequest,
+  getIncidents,
+  updateIncidentStatus,
+  exportRegistrationsCsv,
+  exportRevenueCsv
 } from '../controllers/adminController.js';
 import { requireRole } from '../middleware/rbac.js';
 import auth from '../middleware/auth.js';
@@ -61,5 +65,12 @@ router.patch('/capacities/:id', updateActivityCapacity);
 router.get('/refunds', getRefundRequests);
 router.post('/refunds/:id/process', processRefundRequest);
 
-export default router;
+// Incident Management (HQ command centre)
+router.get('/incidents', getIncidents);
+router.patch('/incidents/:id/status', updateIncidentStatus);
 
+// Exports (M&E and reporting)
+router.get('/export/registrations.csv', exportRegistrationsCsv);
+router.get('/export/revenue.csv', exportRevenueCsv);
+
+export default router;

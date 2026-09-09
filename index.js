@@ -24,11 +24,14 @@ import adminRoutes from './routes/adminRoutes.js';
 import collectibleRoutes from './routes/collectibleRoutes.js';
 import fitnessRoutes from './routes/fitnessRoutes.js';
 import newsletterRoutes from './routes/newsletterRoutes.js';
+import commsRoutes from './routes/commsRoutes.js';
+import contentRoutes from './routes/contentRoutes.js';
 
 // Middleware & Workers
 import errorHandler from './middleware/errorHandler.js';
 import { runInventoryReservationWorker } from './services/inventoryReservationWorker.js';
 import { runCommunicationDispatchWorker } from './services/communicationDispatchWorker.js';
+import { runPhaseEngine } from './services/phaseEngineService.js';
 
 const app = express();
 
@@ -106,6 +109,8 @@ app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/collectibles', collectibleRoutes);
 app.use('/api/v1/fitness', fitnessRoutes);
 app.use('/api/v1/newsletter', newsletterRoutes);
+app.use('/api/v1/comms', commsRoutes);
+app.use('/api/v1/content', contentRoutes);
 
 // Background Worker: 7-Day Merchandise Reservation & Expiry Auto-Release Engine
 // Runs every 10 minutes in dev / 1 hour in prod
@@ -126,6 +131,17 @@ setInterval(async () => {
     await runCommunicationDispatchWorker();
   } catch (err) {
     console.error('Communication dispatch worker cycle error:', err);
+  }
+}, 60 * 1000);
+
+// Background Worker: Phase Engine (proposal §03 phase-aware behaviour)
+// Derives pre_event / event_day / post_event from the scheduled event_date
+// and persists transitions, so the platform switches experience automatically.
+setInterval(async () => {
+  try {
+    await runPhaseEngine();
+  } catch (err) {
+    console.error('Phase engine cycle error:', err);
   }
 }, 60 * 1000);
 

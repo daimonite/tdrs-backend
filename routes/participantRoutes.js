@@ -1,9 +1,9 @@
 import express from 'express';
-import { 
-  getParticipantProfile, 
-  updateParticipantProfile, 
-  getParticipantOrders, 
-  getParticipantTickets, 
+import {
+  getParticipantProfile,
+  updateParticipantProfile,
+  getParticipantOrders,
+  getParticipantTickets,
   getParticipantCertificates,
   getParticipantTraining,
   getParticipantWishlist,
@@ -11,8 +11,11 @@ import {
   getParticipantOrderTracking,
   confirmMerchandisePickup,
   getParticipantPreferences,
-  updateParticipantPreferences
+  updateParticipantPreferences,
+  getReferralCentre,
+  mintReferralCode
 } from '../controllers/participantController.js';
+import { submitIncidentReport } from '../controllers/incidentController.js';
 import auth from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
 
@@ -34,5 +37,12 @@ router.get('/orders/:order_id/tracking', getParticipantOrderTracking);
 router.post('/orders/:order_id/pickup', requireRole(['volunteer', 'admin']), confirmMerchandisePickup);
 router.get('/preferences', getParticipantPreferences);
 router.put('/preferences', updateParticipantPreferences);
+
+// Referral centre (proposal flows 55-61)
+router.get('/referrals', getReferralCentre);
+router.post('/referrals/mint-code', mintReferralCode);
+
+// Incident reporting (volunteer journey 75 — logged-in event staff)
+router.post('/incidents', submitIncidentReport);
 
 export default router;

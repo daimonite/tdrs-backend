@@ -1,22 +1,24 @@
 import { supabase } from '../config/supabase.js';
+import crypto from 'crypto';
 
 /**
  * Participant Controller
- * 100% Database-backed self-service participant endpoints
+ * 100% Database-backed self-service participant endpoints.
+ *
+ * Identity convention: middleware/auth.js already resolves the caller's
+ * profiles row (accepting both lookup conventions) and sets req.user.id to
+ * profiles.id — the primary key every commerce table references. All
+ * lookups here key on that id directly instead of re-resolving by email,
+ * which failed for profiles whose email changed or whose auth_user_id was
+ * linked later (migration 007 edge case).
  */
 
 export const getParticipantProfile = async (req, res) => {
   try {
-    const userEmail = req.user.email;
-
-    if (!userEmail) {
-      return res.status(401).json({ error: 'Authenticated user has no email on profile' });
-    }
-
     const { data: profile, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('email', userEmail)
+      .eq('id', req.user.id)
       .maybeSingle();
 
     if (error) {
@@ -48,13 +50,7 @@ export const getParticipantProfile = async (req, res) => {
 
 export const updateParticipantProfile = async (req, res) => {
   try {
-    const userEmail = req.user.email;
-
-    if (!userEmail) {
-      return res.status(400).json({ error: 'User email is required to update profile' });
-    }
-
-    const { tshirt_size, emergency_contact, blood_group, fitness_sharing_opt_in } = req.body;
+    const { tshirt_size, emergency_contact, fitness_sharing_opt_in } = req.body;
 
     const updates = { updated_at: new Date().toISOString() };
     if (tshirt_size !== undefined) updates.tshirt_size = tshirt_size;
@@ -64,7 +60,7 @@ export const updateParticipantProfile = async (req, res) => {
     const { data: updated, error } = await supabase
       .from('profiles')
       .update(updates)
-      .eq('email', userEmail)
+      .eq('id', req.user.id)
       .select('*')
       .single();
 
@@ -85,33 +81,17 @@ export const updateParticipantProfile = async (req, res) => {
 
 export const getParticipantOrders = async (req, res) => {
   try {
-    const userEmail = req.user.email;
-
-    if (!userEmail) {
-      return res.status(400).json({ error: 'User email is required' });
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', userEmail)
-      .maybeSingle();
-
-    let query = supabase
+    // profile_id covers backend-created orders; user_id covers orders the
+    // frontend created via Supabase using the auth-user id (migration 006).
+    const { data: orders, error } = await supabase
       .from('orders')
       .select('*, order_items(*)')
+      .or(`profile_id.eq.${req.user.id},user_id.eq.${req.user.id}`)
       .order('created_at', { ascending: false });
 
-    if (profile) {
-      query = query.or(`profile_id.eq.${profile.id},customer_email.eq.${userEmail}`);
-    } else {
-      query = query.eq('customer_email', userEmail);
-    }
-
-    const { data: orders, error } = await query;
-
     if (error) {
-      return res.status(500).json({ error: error.message });
+      console.error('getParticipantOrders query failed:', error.message);
+      return res.status(500).json({ error: 'Failed to retrieve order history' });
     }
 
     return res.status(200).json({
@@ -127,30 +107,10 @@ export const getParticipantOrders = async (req, res) => {
 
 export const getParticipantTickets = async (req, res) => {
   try {
-    const userEmail = req.user.email;
-
-    if (!userEmail) {
-      return res.status(400).json({ error: 'User email is required' });
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', userEmail)
-      .maybeSingle();
-
-    if (!profile) {
-      return res.status(200).json({
-        status: 'success',
-        count: 0,
-        data: []
-      });
-    }
-
     const { data: tickets, error } = await supabase
       .from('tickets')
       .select('*, activities(*)')
-      .eq('profile_id', profile.id)
+      .eq('profile_id', req.user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -170,12 +130,19 @@ export const getParticipantTickets = async (req, res) => {
 
 export const getParticipantTraining = async (req, res) => {
   try {
-    const userEmail = req.user.email;
+    // Honest empty state: the Strava integration is deferred per Schedule
+    // A11 and no training-activity store exists yet, so weekly stats are
+    // genuinely zero — never fabricated numbers.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('fitness_sharing_opt_in')
+      .eq('id', req.user.id)
+      .maybeSingle();
 
     return res.status(200).json({
       status: 'success',
-      athlete_email: userEmail || 'unspecified',
-      strava_sync_status: 'ready',
+      opt_in_active: profile?.fitness_sharing_opt_in || false,
+      integration_status: 'PENDING_THIRD_PARTY_APPROVAL',
       weekly_stats: {
         total_kms_completed: 0,
         target_kms: 60,
@@ -183,7 +150,8 @@ export const getParticipantTraining = async (req, res) => {
         rides_count: 0,
         avg_speed_kmh: 0,
         longest_ride_km: 0
-      }
+      },
+      message: 'Training sync activates once the Strava/Health Connect integration is approved (Schedule A11).'
     });
   } catch (error) {
     console.error('getParticipantTrainingProgress exception:', error);
@@ -193,32 +161,28 @@ export const getParticipantTraining = async (req, res) => {
 
 export const getParticipantCertificates = async (req, res) => {
   try {
-    const userEmail = req.user.email;
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', userEmail)
-      .maybeSingle();
-
-    if (!profile) {
-      return res.status(200).json({ status: 'success', count: 0, data: [] });
-    }
-
     const { data: certificates, error } = await supabase
       .from('digital_collectibles')
       .select('*, activities(title, category, distance_km)')
-      .eq('profile_id', profile.id)
+      .eq('profile_id', req.user.id)
       .order('issued_at', { ascending: false });
 
     if (error) {
       return res.status(500).json({ error: error.message });
     }
 
+    // Expose the schema column (finish_time_seconds) under the
+    // finish_time alias the portal expects, without selecting a
+    // nonexistent column.
+    const data = (certificates || []).map(c => ({
+      ...c,
+      finish_time: c.finish_time_seconds ?? null
+    }));
+
     return res.status(200).json({
       status: 'success',
-      count: certificates ? certificates.length : 0,
-      data: certificates || []
+      count: data.length,
+      data
     });
   } catch (error) {
     console.error('getParticipantCertificates exception:', error);
@@ -228,26 +192,10 @@ export const getParticipantCertificates = async (req, res) => {
 
 export const getParticipantWishlist = async (req, res) => {
   try {
-    const userEmail = req.user.email;
-
-    if (!userEmail) {
-      return res.status(400).json({ error: 'User email is required' });
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', userEmail)
-      .maybeSingle();
-
-    if (!profile) {
-      return res.status(200).json({ status: 'success', count: 0, data: [] });
-    }
-
     const { data: wishlistItems, error } = await supabase
       .from('participant_wishlist')
       .select('id, variant_id, created_at, product_variants(*)')
-      .eq('profile_id', profile.id)
+      .eq('profile_id', req.user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -267,28 +215,17 @@ export const getParticipantWishlist = async (req, res) => {
 
 export const toggleWishlistItem = async (req, res) => {
   try {
-    const userEmail = req.user.email;
     const { variant_id } = req.body;
 
-    if (!userEmail || !variant_id) {
-      return res.status(400).json({ error: 'User email and variant_id are required' });
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', userEmail)
-      .maybeSingle();
-
-    if (!profile) {
-      return res.status(404).json({ error: 'Participant profile not found' });
+    if (!variant_id) {
+      return res.status(400).json({ error: 'variant_id is required' });
     }
 
     // Check if exists
     const { data: existing } = await supabase
       .from('participant_wishlist')
       .select('id')
-      .eq('profile_id', profile.id)
+      .eq('profile_id', req.user.id)
       .eq('variant_id', variant_id)
       .maybeSingle();
 
@@ -307,7 +244,7 @@ export const toggleWishlistItem = async (req, res) => {
 
     const { data: inserted, error: insErr } = await supabase
       .from('participant_wishlist')
-      .insert([{ profile_id: profile.id, variant_id }])
+      .insert([{ profile_id: req.user.id, variant_id }])
       .select()
       .single();
 
@@ -335,7 +272,7 @@ export const getParticipantOrderTracking = async (req, res) => {
       .from('orders')
       .select('*, order_items(*)')
       .or(`id.eq.${order_id},order_number.eq.${order_id}`)
-      .single();
+      .maybeSingle();
 
     if (error || !order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -343,7 +280,7 @@ export const getParticipantOrderTracking = async (req, res) => {
 
     // Ownership check: participants may only track their own orders.
     // Volunteers/admins (pickup desk staff) may track any order.
-    const isOwner = order.customer_email === req.user.email || order.profile_id === req.user.id;
+    const isOwner = order.profile_id === req.user.id || order.user_id === req.user.id;
     const isStaff = req.user.role === 'volunteer' || req.user.role === 'admin';
     if (!isOwner && !isStaff) {
       return res.status(403).json({ error: 'You do not have access to this order' });
@@ -399,16 +336,10 @@ export const confirmMerchandisePickup = async (req, res) => {
 
 export const getParticipantPreferences = async (req, res) => {
   try {
-    const userEmail = req.user.email;
-
-    if (!userEmail) {
-      return res.status(400).json({ error: 'User email is required' });
-    }
-
     const { data: profile } = await supabase
       .from('profiles')
       .select('fitness_sharing_opt_in, emergency_contact, tshirt_size')
-      .eq('email', userEmail)
+      .eq('id', req.user.id)
       .maybeSingle();
 
     return res.status(200).json({
@@ -423,12 +354,7 @@ export const getParticipantPreferences = async (req, res) => {
 
 export const updateParticipantPreferences = async (req, res) => {
   try {
-    const userEmail = req.user.email;
     const { fitness_sharing_opt_in, emergency_contact, tshirt_size } = req.body;
-
-    if (!userEmail) {
-      return res.status(400).json({ error: 'User email is required' });
-    }
 
     const updates = { updated_at: new Date().toISOString() };
     if (fitness_sharing_opt_in !== undefined) updates.fitness_sharing_opt_in = fitness_sharing_opt_in;
@@ -438,7 +364,7 @@ export const updateParticipantPreferences = async (req, res) => {
     const { data, error } = await supabase
       .from('profiles')
       .update(updates)
-      .eq('email', userEmail)
+      .eq('id', req.user.id)
       .select()
       .single();
 
@@ -454,5 +380,112 @@ export const updateParticipantPreferences = async (req, res) => {
   } catch (error) {
     console.error('updateParticipantPreferences exception:', error);
     return res.status(500).json({ error: 'Failed to update preferences' });
+  }
+};
+
+// ==============================================================================
+// REFERRAL CENTRE (proposal flows 55-61)
+// ==============================================================================
+
+/**
+ * The participant's unique referral code/link, conversion stats and the
+ * public leaderboard. Codes are provisioned for all profiles by migration
+ * 008; a null here means the row predates the backfill and the caller can
+ * hit /referrals/code to mint one.
+ */
+export const getReferralCentre = async (req, res) => {
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, full_name, referral_code')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Participant profile not found' });
+    }
+
+    const { data: myReferrals } = await supabase
+      .from('referrals')
+      .select('id, referral_code, status, reward_label, converted_at, rewarded_at, created_at')
+      .eq('referrer_profile_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    const referrals = myReferrals || [];
+    const conversions = referrals.filter(r => r.status === 'converted' || r.status === 'rewarded').length;
+
+    // Public leaderboard: top converted referrers, aggregated only — no
+    // personal data beyond the display name.
+    const { data: converted } = await supabase
+      .from('referrals')
+      .select('referrer_profile_id, profiles!referrals_referrer_profile_id_fkey(full_name)')
+      .eq('status', 'converted');
+
+    const counts = new Map();
+    for (const row of converted || []) {
+      counts.set(row.referrer_profile_id, (counts.get(row.referrer_profile_id) || 0) + 1);
+    }
+    const leaderboard = [...counts.entries()]
+      .map(([pid, count]) => ({
+        name: (converted || []).find(c => c.referrer_profile_id === pid)?.profiles?.full_name || 'Athlete',
+        conversions: count
+      }))
+      .sort((a, b) => b.conversions - a.conversions)
+      .slice(0, 10);
+
+    return res.status(200).json({
+      status: 'success',
+      referral_code: profile.referral_code,
+      referral_link: profile.referral_code
+        ? `https://tourderotary.co.tz/register?ref=${profile.referral_code}`
+        : null,
+      stats: {
+        shares: referrals.length,
+        registered: referrals.filter(r => r.status === 'registered').length,
+        converted: conversions,
+        rewarded: referrals.filter(r => r.status === 'rewarded').length
+      },
+      referrals,
+      leaderboard
+    });
+  } catch (error) {
+    console.error('getReferralCentre exception:', error);
+    return res.status(500).json({ error: 'Failed to retrieve referral centre' });
+  }
+};
+
+/**
+ * Mints a referral code for profiles created before migration 008's
+ * backfill (or whose insert raced it).
+ */
+export const mintReferralCode = async (req, res) => {
+  try {
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('referral_code')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (existing?.referral_code) {
+      return res.status(200).json({ status: 'success', referral_code: existing.referral_code });
+    }
+
+    const code = `TDR${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ referral_code: code })
+      .eq('id', req.user.id)
+      .select('referral_code')
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to mint referral code' });
+    }
+
+    return res.status(200).json({ status: 'success', referral_code: data.referral_code });
+  } catch (error) {
+    console.error('mintReferralCode exception:', error);
+    return res.status(500).json({ error: 'Failed to mint referral code' });
   }
 };

@@ -1,38 +1,47 @@
+import { supabase } from '../config/supabase.js';
+
 /**
  * Fitness & Strava Sync Controller
- * Syncs athlete training distance with privacy-safe data minimization (no raw GPS stored)
+ *
+ * IMPORTANT: Strava integration is explicitly deferred per Schedule A11
+ * ("subject to third-party access and approvals") — there is no live
+ * Strava OAuth connection, and no table exists yet to store training
+ * activity data. This previously returned entirely fabricated data
+ * (a fake athlete_id, fake distances, fake badges with fake dates) on
+ * every single request, and syncStravaActivity did not persist anything
+ * at all — it just echoed back a number computed from a hardcoded base
+ * value. Both are now honest about the real state instead.
  */
 export const getFitnessSyncStatus = async (req, res) => {
-  return res.status(200).json({
-    connected_service: 'Strava',
-    athlete_id: 'strava_athlete_89412',
-    opt_in_active: true,
-    privacy_mode: 'AGGREGATED_DISTANCE_ONLY (No raw GPS track stored)',
-    training_summary: {
-      total_distance_km: 184.6,
-      weekly_average_km: 36.9,
-      longest_ride_km: 62.4,
-      target_distance_km: 200.0,
-      completion_percentage: 92.3
-    },
-    earned_badges: [
-      { badge_id: 'badge_50k', title: '50km Base Builder', awarded_at: '2026-08-10' },
-      { badge_id: 'badge_100k', title: 'Century Milestone', awarded_at: '2026-08-20' },
-      { badge_id: 'badge_coast_warrior', title: 'Dar Coastal Climber', awarded_at: '2026-08-24' }
-    ]
-  });
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('fitness_sharing_opt_in')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to check fitness sync status' });
+    }
+
+    return res.status(200).json({
+      connected_service: null,
+      status: 'NOT_CONNECTED',
+      opt_in_active: profile?.fitness_sharing_opt_in || false,
+      message: 'Strava sync is not yet available — this integration is pending third-party approval (Schedule A11). No training data is connected or stored for this account.'
+    });
+  } catch (error) {
+    console.error('getFitnessSyncStatus exception:', error);
+    return res.status(500).json({ error: 'Failed to retrieve fitness sync status' });
+  }
 };
 
 export const syncStravaActivity = async (req, res) => {
-  const { activity_distance_km, activity_type = 'Ride' } = req.body;
-
-  if (!activity_distance_km) {
-    return res.status(400).json({ error: 'Distance is required' });
-  }
-
-  return res.status(200).json({
-    success: true,
-    message: `Logged ${activity_distance_km} km to athlete training profile without storing GPS track points.`,
-    new_total_km: 184.6 + parseFloat(activity_distance_km)
+  // Honest 501: there is nowhere for this data to go yet — no Strava OAuth
+  // connection and no training_activities table exist. Returning a fake
+  // "success" here would silently discard whatever the caller sent.
+  return res.status(501).json({
+    error: 'NOT_IMPLEMENTED',
+    message: 'Strava activity sync is not yet built. This endpoint is a placeholder pending Schedule A11 third-party approval.'
   });
 };

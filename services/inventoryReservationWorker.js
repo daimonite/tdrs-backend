@@ -41,22 +41,17 @@ export async function runInventoryReservationWorker() {
           .update({ status: 'expired_released', updated_at: nowIso })
           .eq('id', item.id);
 
-        // Return stock back to product_variants
-        const { data: variant } = await supabase
-          .from('product_variants')
-          .select('stock_quantity, reserved_quantity')
-          .eq('id', item.variant_id)
-          .single();
+        // Release reserved stock atomically via RPC (migration 008).
+        // Reservation decrements availability at reserve time; release adds
+        // it back exactly once. (The previous read-then-write here both
+        // raced and inflated stock_quantity for units never subtracted.)
+        const { error: releaseErr } = await supabase.rpc('release_variant_stock', {
+          p_variant_id: item.variant_id,
+          p_qty: item.quantity
+        });
 
-        if (variant) {
-          await supabase
-            .from('product_variants')
-            .update({
-              stock_quantity: variant.stock_quantity + item.quantity,
-              reserved_quantity: Math.max(0, variant.reserved_quantity - item.quantity),
-              updated_at: nowIso
-            })
-            .eq('id', item.variant_id);
+        if (releaseErr) {
+          console.error(`[Reservation Worker] Atomic release failed for variant ${item.variant_id}:`, releaseErr.message);
         }
 
         // Mark order as expired if still pending

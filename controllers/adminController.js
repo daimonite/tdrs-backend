@@ -414,11 +414,15 @@ export const releaseExpiredReservationsNow = async (req, res) => {
     }
 
     for (const item of expiredList) {
+      // 'expired_released' is the only expiry status allowed by the
+      // inventory_reservations CHECK constraint ('expired' violates it).
       await supabase
         .from('inventory_reservations')
-        .update({ status: 'expired' })
+        .update({ status: 'expired_released', updated_at: now })
         .eq('id', item.id);
 
+      // Atomic stock release via RPC (migration 008) — releasing must add
+      // availability back exactly once, never via read-then-write loops.
       await supabase.rpc('decrement_reserved_inventory', {
         variant_uuid: item.variant_id,
         decrement_by: item.quantity
@@ -742,5 +746,160 @@ export const processRefundRequest = async (req, res) => {
   } catch (error) {
     console.error('processRefundRequest exception:', error);
     return res.status(500).json({ error: 'Failed to process refund request' });
+  }
+};
+
+// ==============================================================================
+// INCIDENT MANAGEMENT (HQ command centre — proposal flow 91/104)
+// ==============================================================================
+
+export const getIncidents = async (req, res) => {
+  try {
+    const { status, severity } = req.query;
+    let query = supabase
+      .from('incidents')
+      .select('*, profiles(full_name, phone_number)')
+      .order('created_at', { ascending: false });
+
+    if (status) query = query.eq('status', status);
+    if (severity) query = query.eq('severity', severity);
+
+    const { data, error } = await query;
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      count: data ? data.length : 0,
+      data: data || []
+    });
+  } catch (error) {
+    console.error('getIncidents exception:', error);
+    return res.status(500).json({ error: 'Failed to retrieve incidents' });
+  }
+};
+
+export const updateIncidentStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, resolution_notes } = req.body;
+    const validStatuses = ['open', 'acknowledged', 'resolved', 'closed'];
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Status must be one of: ${validStatuses.join(', ')}` });
+    }
+
+    const updates = { status, updated_at: new Date().toISOString() };
+    if (resolution_notes !== undefined) updates.resolution_notes = resolution_notes;
+    if (status === 'resolved' || status === 'closed') updates.resolved_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('incidents')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    await supabase.from('audit_logs').insert([{
+      action: 'UPDATE_INCIDENT_STATUS',
+      target_resource: `incidents:${id}`,
+      details_json: { status },
+      actor_profile_id: req.user.id,
+      actor_role: req.user.role,
+      ip_address: req.ip
+    }]);
+
+    return res.status(200).json({
+      status: 'success',
+      message: `Incident ${id} updated to '${status}'`,
+      data
+    });
+  } catch (error) {
+    console.error('updateIncidentStatus exception:', error);
+    return res.status(500).json({ error: 'Failed to update incident' });
+  }
+};
+
+// ==============================================================================
+// CSV EXPORTS (M&E and reporting — proposal journey N/103)
+// ==============================================================================
+
+const toCsv = (rows) => {
+  if (!rows || rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  const escape = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))].join('\n');
+};
+
+export const exportRegistrationsCsv = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('tickets')
+      .select('bib_number, checked_in, checked_in_at, created_at, profiles(full_name, email, phone_number), activities(title, category)')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    const rows = (data || []).map(t => ({
+      bib_number: t.bib_number,
+      participant: t.profiles?.full_name,
+      email: t.profiles?.email,
+      phone: t.profiles?.phone_number,
+      activity: t.activities?.title,
+      category: t.activities?.category,
+      checked_in: t.checked_in,
+      checked_in_at: t.checked_in_at,
+      registered_at: t.created_at
+    }));
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="registrations.csv"');
+    return res.status(200).send(toCsv(rows));
+  } catch (error) {
+    console.error('exportRegistrationsCsv exception:', error);
+    return res.status(500).json({ error: 'Failed to export registrations' });
+  }
+};
+
+export const exportRevenueCsv = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('order_number, status, subtotal_tsh, discount_tsh, total_tsh, currency, created_at, profiles(full_name, email)')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    const rows = (data || []).map(o => ({
+      order_number: o.order_number,
+      customer: o.profiles?.full_name,
+      email: o.profiles?.email,
+      status: o.status,
+      subtotal_tsh: o.subtotal_tsh,
+      discount_tsh: o.discount_tsh,
+      total_tsh: o.total_tsh,
+      currency: o.currency,
+      created_at: o.created_at
+    }));
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="revenue.csv"');
+    return res.status(200).send(toCsv(rows));
+  } catch (error) {
+    console.error('exportRevenueCsv exception:', error);
+    return res.status(500).json({ error: 'Failed to export revenue' });
   }
 };

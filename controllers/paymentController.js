@@ -22,10 +22,19 @@ export const initiatePayment = async (req, res) => {
       provider
     });
 
+    if (paymeResult.status === 'unconfigured' || paymeResult.status === 'failed') {
+      return res.status(502).json({ error: paymeResult.error || 'Payment provider unavailable' });
+    }
+
+    // Flat response shape — matches the frontend's InitiatePaymentResponse
+    // contract exactly (src/lib/api.ts: { checkoutUrl, transactionRef }).
+    // Mobile money is a USSD push, not a redirect flow, so there is no real
+    // "checkout URL" to send someone to — checkoutUrl is null rather than a
+    // fabricated link. The frontend should prompt "check your phone" and
+    // poll GET /api/v1/payments/verify/:transactionRef for status.
     return res.status(200).json({
-      success: true,
-      message: 'Payment intent created and USSD push initiated.',
-      data: paymeResult
+      checkoutUrl: paymeResult.checkout_url || null,
+      transactionRef: paymeResult.payme_reference || paymeResult.transaction_ref || order_number
     });
   } catch (error) {
     console.error('Payment initiation error:', error);
@@ -98,7 +107,7 @@ export const handlePayMeWebhook = async (req, res) => {
           payme_reference: payme_reference || `PAYME-${Date.now()}`,
           payment_method: provider,
           phone_number: phone_number || order.billing_phone,
-          amount_tsh: parseInt(amount_tsh, 10) || order.total_amount_tsh,
+          amount_tsh: parseInt(amount_tsh, 10) || order.total_tsh,
           status: 'successful',
           paid_at: new Date().toISOString()
         }])
@@ -120,6 +129,20 @@ export const handlePayMeWebhook = async (req, res) => {
         .from('inventory_reservations')
         .update({ status: 'completed_paid' })
         .eq('order_id', order.id);
+
+      // Referral conversion (proposal flow 58-60): the friend's paid order
+      // converts their pending referral; the referrer's reward is stamped
+      // once so repeat orders don't double-reward.
+      await supabase
+        .from('referrals')
+        .update({
+          status: 'converted',
+          order_id: order.id,
+          converted_at: new Date().toISOString(),
+          reward_label: 'Referral Bonus — Tour de Rotary DSM 2026'
+        })
+        .eq('referred_profile_id', order.profile_id)
+        .eq('status', 'registered');
 
       // Find activity items to issue tickets
       const { data: orderItems } = await supabase
@@ -180,11 +203,15 @@ export const handlePayMeWebhook = async (req, res) => {
       const fullName = profile?.full_name || 'Participant';
       const targetPhone = phone_number || order.billing_phone;
 
+      const firstActivity = orderItems && orderItems.length > 0
+        ? await supabase.from('activities').select('title').eq('id', orderItems[0].reference_id).maybeSingle()
+        : { data: null };
+
       if (targetPhone && issuedTickets.length > 0) {
         await textifySms.sendTicketIssuedSms(targetPhone, {
           fullName,
           bibNumber: issuedTickets[0].bib_number,
-          activityTitle: 'Tour de Rotary DSM 2026',
+          activityTitle: firstActivity.data?.title || 'Tour de Rotary DSM 2026',
           qrToken: issuedTickets[0].qr_verification_token
         });
       }
@@ -201,6 +228,47 @@ export const handlePayMeWebhook = async (req, res) => {
   } catch (error) {
     console.error('Webhook processing exception:', error);
     return res.status(500).json({ error: 'Webhook processing failure' });
+  }
+};
+
+export const getPaymentVerification = async (req, res) => {
+  try {
+    const { transactionRef } = req.params;
+
+    // transactionRef may be either our order_number, or PayMe's own
+    // reference recorded on the payments row — accept either.
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('status, payments(payme_reference)')
+      .or(`order_number.eq.${transactionRef}`)
+      .maybeSingle();
+
+    let resolvedOrder = order;
+    if (!resolvedOrder) {
+      const { data: paymentMatch } = await supabase
+        .from('payments')
+        .select('orders(status)')
+        .eq('payme_reference', transactionRef)
+        .maybeSingle();
+      resolvedOrder = paymentMatch?.orders || null;
+    }
+
+    if (error && !resolvedOrder) {
+      return res.status(500).json({ error: 'Failed to verify payment' });
+    }
+    if (!resolvedOrder) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    // Map our internal order states to the frontend's expected 3-state enum
+    const statusMap = { paid: 'completed', pending: 'pending', processing: 'pending', cancelled: 'failed', expired: 'failed' };
+
+    return res.status(200).json({
+      status: statusMap[resolvedOrder.status] || 'pending'
+    });
+  } catch (error) {
+    console.error('getPaymentVerification exception:', error);
+    return res.status(500).json({ error: 'Failed to verify payment' });
   }
 };
 
@@ -224,7 +292,7 @@ export const getPaymentStatus = async (req, res) => {
       status: 'success',
       order_number: order.order_number,
       payment_status: order.status.toUpperCase(),
-      total_amount_tsh: order.total_amount_tsh,
+      total_tsh: order.total_tsh,
       currency: 'TZS',
       payment_method: payment?.payment_method || null,
       payme_reference: payment?.payme_reference || null,
@@ -260,7 +328,7 @@ export const retryPayment = async (req, res) => {
 
     const paymeResult = await paymeService.initiateMobilePayment({
       orderNumber: order.order_number,
-      amountTsh: order.total_amount_tsh,
+      amountTsh: order.total_tsh,
       phoneNumber: phone_number,
       provider
     });

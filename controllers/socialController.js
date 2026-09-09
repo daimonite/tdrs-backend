@@ -52,61 +52,170 @@ export const getTwibbonFrames = (req, res) => {
   });
 };
 
+/**
+ * Shared SVG frame builder. `bibLine` is rendered as-is on the badge line:
+ * ticket-based flows pass the real bib number, the public generator passes
+ * the participant's custom name/text. All dynamic values are XML-escaped.
+ */
+export function buildFrameSvg({ frame, athleteName, badgeLabel, bibLine }) {
+  const esc = (s) => String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080">
+      <rect x="20" y="20" width="1040" height="1040" rx="40" fill="none" stroke="${frame.theme_colors.primary}" stroke-width="24"/>
+      <rect x="36" y="36" width="1008" height="1008" rx="28" fill="none" stroke="${frame.theme_colors.accent}" stroke-width="6"/>
+      <path d="M 0,0 L 420,0 L 360,110 L 0,110 Z" fill="${frame.theme_colors.primary}"/>
+      <text x="40" y="70" font-family="Plus Jakarta Sans, sans-serif" font-size="34" font-weight="800" fill="#ffffff" letter-spacing="1">TOUR DE ROTARY DSM</text>
+      <text x="40" y="96" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="600" fill="${frame.theme_colors.accent}">DAR ES SALAAM 2026</text>
+      <path d="M 0,860 L 1080,860 L 1080,1080 L 0,1080 Z" fill="${frame.theme_colors.primary}" opacity="0.94"/>
+      <rect x="0" y="850" width="1080" height="10" fill="${frame.theme_colors.accent}"/>
+      <text x="60" y="930" font-family="Plus Jakarta Sans, sans-serif" font-size="46" font-weight="800" fill="#ffffff">${esc(athleteName).toUpperCase()}</text>
+      <text x="60" y="976" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="600" fill="${frame.theme_colors.accent}">${esc(badgeLabel)}</text>
+      <text x="60" y="1020" font-family="JetBrains Mono, monospace" font-size="24" font-weight="700" fill="#cbd5e1">OFFICIAL BIB: ${esc(bibLine)}</text>
+      <text x="1020" y="970" font-family="Plus Jakarta Sans, sans-serif" font-size="22" font-weight="600" fill="#ffffff" text-anchor="end">RIDING FOR CHARITY</text>
+      <text x="1020" y="1005" font-family="Plus Jakarta Sans, sans-serif" font-size="18" font-weight="400" fill="${frame.theme_colors.accent}" text-anchor="end">Maternal &amp; Child Health Initiative</text>
+    </svg>
+  `.trim();
+}
+
+/**
+ * Shared composition logic used by both the detailed endpoint
+ * (POST /api/v1/social/twibbon/generate) and the frontend-facing alias
+ * (POST /api/v1/collectibles/frame). Identity (name, bib, activity) is
+ * ALWAYS resolved from the caller's own real, paid ticket — never trusted
+ * from the request body. Throws a {status, error} object on failure so
+ * both callers can map it to the right HTTP response.
+ */
+export async function buildTwibbonComposition({ userId, frameId, ticketId, photoUrl }) {
+  let ticketQuery = supabase
+    .from('tickets')
+    .select('bib_number, profiles(full_name), activities(title, category)')
+    .eq('profile_id', userId);
+
+  if (ticketId) {
+    ticketQuery = ticketQuery.eq('id', ticketId);
+  }
+
+  const { data: ticket, error: ticketErr } = await ticketQuery.limit(1).maybeSingle();
+
+  if (ticketErr) {
+    throw { status: 500, error: 'Failed to look up your ticket' };
+  }
+  if (!ticket) {
+    throw { status: 404, error: 'No ticket found for your account. Complete registration first.' };
+  }
+
+  const athlete_name = ticket.profiles?.full_name || 'Athlete';
+  const bib_number = ticket.bib_number;
+
+  const frame = OFFICIAL_TWIBBON_FRAMES.find(f => f.id === frameId)
+    || OFFICIAL_TWIBBON_FRAMES.find(f => f.category === ticket.activities?.category);
+  if (!frame) {
+    throw { status: 404, error: `Frame not found: ${frameId}` };
+  }
+
+  const shareUrl = `https://tourderotary.co.tz/athlete/${encodeURIComponent(bib_number)}`;
+  const shareText = `🚴‍♂️ I'm participating in Tour de Rotary Dar es Salaam 2026 (${frame.badge_label})! Supporting Rotary Maternal & Child Health in Tanzania. Join or sponsor me: ${shareUrl} #TourDeRotaryDSM2026`;
+
+  const socialLinks = {
+    whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`,
+    twitter_x: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
+    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`
+  };
+
+  const svgOverlay = buildFrameSvg({
+    frame,
+    athleteName: athlete_name,
+    badgeLabel: frame.badge_label,
+    bibLine: bib_number
+  });
+
+  try {
+    await supabase.from('social_shares').insert([{
+      participant_name: athlete_name,
+      bib_number,
+      frame_template: frame.id,
+      shared_platform: 'download'
+    }]);
+  } catch {
+    // Non-blocking
+  }
+
+  const svgDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(svgOverlay)}`;
+
+  return {
+    athlete_name,
+    bib_number,
+    frame,
+    photo_url: photoUrl || null,
+    svgDataUri,
+    socialLinks,
+    downloadFilename: `TourDeRotary2026_${bib_number}_Twibbon.png`
+  };
+}
+
 export const generateTwibbon = async (req, res) => {
   try {
-    const { 
-      athlete_name = 'Athlete', 
-      bib_number = 'CYC-2026-745', 
-      activity_title = 'Grand Cyclathon 60km', 
-      frame_id = 'cyclathon_60km',
-      photo_url
-    } = req.body;
+    const { frame_id, ticket_id, photo_url } = req.body;
+    const result = await buildTwibbonComposition({ userId: req.user.id, frameId: frame_id, ticketId: ticket_id, photoUrl: photo_url });
+
+    return res.status(200).json({
+      status: 'success',
+      athlete_name: result.athlete_name,
+      bib_number: result.bib_number,
+      frame_details: result.frame,
+      composition: {
+        photo_url: result.photo_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+        svg_overlay_data: result.svgDataUri,
+        aspect_ratio: '1:1',
+        resolution: '1080x1080'
+      },
+      share_links: result.socialLinks,
+      download_filename: result.downloadFilename
+    });
+  } catch (error) {
+    if (error && error.status) {
+      return res.status(error.status).json({ error: error.error });
+    }
+    console.error('generateTwibbon exception:', error);
+    return res.status(500).json({ error: 'Failed to generate twibbon frame' });
+  }
+};
+
+/**
+ * Public, no-login frame generator (proposal flow F / 39-45): anyone can
+ * upload a photo, pick a branded frame, add their name/activity, download
+ * and share. The custom text is user-supplied and is rendered on the badge
+ * line instead of a bib number — it is XML-escaped inside buildFrameSvg.
+ * No ticket is required and nothing about the caller is recorded beyond
+ * the frame id in social_shares (same non-blocking log as ticket flows).
+ */
+export const generatePublicFrame = async (req, res) => {
+  try {
+    const { frame_id, display_name, custom_label } = req.body;
 
     const frame = OFFICIAL_TWIBBON_FRAMES.find(f => f.id === frame_id) || OFFICIAL_TWIBBON_FRAMES[0];
 
-    const shareUrl = `https://tourderotary.co.tz/athlete/${encodeURIComponent(bib_number)}`;
-    const shareText = `🚴‍♂️ I'm participating in Tour de Rotary Dar es Salaam 2026 (${frame.badge_label})! Supporting Rotary Maternal & Child Health in Tanzania. Join or sponsor me: ${shareUrl} #TourDeRotaryDSM2026`;
+    const name = (display_name || 'Friend of Tour de Rotary').slice(0, 40);
+    const label = (custom_label || frame.badge_label).slice(0, 40);
 
-    const socialLinks = {
-      whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`,
-      twitter_x: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
-      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`
-    };
+    const svgOverlay = buildFrameSvg({
+      frame,
+      athleteName: name,
+      badgeLabel: label,
+      bibLine: '—'
+    });
 
-    // Vector SVG Overlay definition for client-side or canvas rendering
-    const svgOverlay = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080">
-        <!-- Outer Rotary Ribbon Border -->
-        <rect x="20" y="20" width="1040" height="1040" rx="40" fill="none" stroke="${frame.theme_colors.primary}" stroke-width="24"/>
-        <rect x="36" y="36" width="1008" height="1008" rx="28" fill="none" stroke="${frame.theme_colors.accent}" stroke-width="6"/>
-        
-        <!-- Header Ribbon -->
-        <path d="M 0,0 L 420,0 L 360,110 L 0,110 Z" fill="${frame.theme_colors.primary}"/>
-        <text x="40" y="70" font-family="Plus Jakarta Sans, sans-serif" font-size="34" font-weight="800" fill="#ffffff" letter-spacing="1">TOUR DE ROTARY DSM</text>
-        <text x="40" y="96" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="600" fill="${frame.theme_colors.accent}">DAR ES SALAAM 2026</text>
-
-        <!-- Bottom Banner Overlay -->
-        <path d="M 0,860 L 1080,860 L 1080,1080 L 0,1080 Z" fill="${frame.theme_colors.primary}" opacity="0.94"/>
-        <rect x="0" y="850" width="1080" height="10" fill="${frame.theme_colors.accent}"/>
-
-        <!-- Athlete Credentials -->
-        <text x="60" y="930" font-family="Plus Jakarta Sans, sans-serif" font-size="46" font-weight="800" fill="#ffffff">${athlete_name.toUpperCase()}</text>
-        <text x="60" y="976" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="600" fill="${frame.theme_colors.accent}">${frame.badge_label}</text>
-        <text x="60" y="1020" font-family="JetBrains Mono, monospace" font-size="24" font-weight="700" fill="#cbd5e1">OFFICIAL BIB: ${bib_number}</text>
-
-        <!-- Cause Stamp -->
-        <text x="1020" y="970" font-family="Plus Jakarta Sans, sans-serif" font-size="22" font-weight="600" fill="#ffffff" text-anchor="end">RIDING FOR CHARITY</text>
-        <text x="1020" y="1005" font-family="Plus Jakarta Sans, sans-serif" font-size="18" font-weight="400" fill="${frame.theme_colors.accent}" text-anchor="end">Maternal & Child Health Initiative</text>
-      </svg>
-    `.trim();
-
-    // Log social share event
     try {
       await supabase.from('social_shares').insert([{
-        participant_name: athlete_name,
-        bib_number,
-        frame_template: frame_id,
+        participant_name: name,
+        frame_template: frame.id,
         shared_platform: 'download'
       }]);
     } catch {
@@ -115,39 +224,52 @@ export const generateTwibbon = async (req, res) => {
 
     return res.status(200).json({
       status: 'success',
-      athlete_name,
-      bib_number,
       frame_details: frame,
-      composition: {
-        photo_url: photo_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-        svg_overlay_data: `data:image/svg+xml;utf8,${encodeURIComponent(svgOverlay)}`,
-        aspect_ratio: '1:1',
-        resolution: '1080x1080'
-      },
-      share_links: socialLinks,
-      download_filename: `TourDeRotary2026_${bib_number}_Twibbon.png`
+      frame_url: `data:image/svg+xml;utf8,${encodeURIComponent(svgOverlay)}`,
+      download_filename: `TourDeRotary2026_Frame_${frame.id}.png`
     });
   } catch (error) {
-    console.error('generateTwibbon exception:', error);
-    return res.status(500).json({ error: 'Failed to generate twibbon frame' });
+    console.error('generatePublicFrame exception:', error);
+    return res.status(500).json({ error: 'Failed to generate frame' });
   }
 };
 
-export const getOpenGraphCard = (req, res) => {
-  const { bib_or_id } = req.params;
-  const bib = bib_or_id || 'CYC-2026-745';
+export const getOpenGraphCard = async (req, res) => {
+  try {
+    const { bib_or_id } = req.params;
 
-  return res.status(200).json({
-    status: 'success',
-    og_meta: {
-      'og:title': `Tour de Rotary DSM 2026 — Official Athlete Pass (BIB: ${bib})`,
-      'og:description': `Support this athlete at the Tour de Rotary Dar es Salaam 2026. Benefiting Rotary Club Maternal & Child Health clinics across Tanzania.`,
-      'og:image': `https://tourderotary.co.tz/og-cards/${bib}.png`,
-      'og:url': `https://tourderotary.co.tz/athlete/${bib}`,
-      'og:type': 'profile',
-      'twitter:card': 'summary_large_image',
-      'twitter:site': '@RotaryDSM',
-      'twitter:title': `Athlete Pass | Tour de Rotary 2026 | BIB: ${bib}`
+    const { data: ticket, error } = await supabase
+      .from('tickets')
+      .select('bib_number, profiles(full_name), activities(title)')
+      .or(`bib_number.eq.${bib_or_id},id.eq.${bib_or_id}`)
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to look up athlete pass' });
     }
-  });
+    if (!ticket) {
+      return res.status(404).json({ error: 'No athlete found for this BIB number' });
+    }
+
+    const bib = ticket.bib_number;
+    const athleteName = ticket.profiles?.full_name || 'Athlete';
+    const activityTitle = ticket.activities?.title || 'Tour de Rotary DSM 2026';
+
+    return res.status(200).json({
+      status: 'success',
+      og_meta: {
+        'og:title': `${athleteName} — Tour de Rotary DSM 2026 Official Athlete Pass (BIB: ${bib})`,
+        'og:description': `Support ${athleteName} in the ${activityTitle} at Tour de Rotary Dar es Salaam 2026. Benefiting Rotary Club Maternal & Child Health clinics across Tanzania.`,
+        'og:image': `https://tourderotary.co.tz/og-cards/${bib}.png`,
+        'og:url': `https://tourderotary.co.tz/athlete/${bib}`,
+        'og:type': 'profile',
+        'twitter:card': 'summary_large_image',
+        'twitter:site': '@RotaryDSM',
+        'twitter:title': `${athleteName} | Tour de Rotary 2026 | BIB: ${bib}`
+      }
+    });
+  } catch (error) {
+    console.error('getOpenGraphCard exception:', error);
+    return res.status(500).json({ error: 'Failed to build athlete share card' });
+  }
 };

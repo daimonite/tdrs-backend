@@ -58,12 +58,18 @@ export const handlePayMeWebhook = async (req, res) => {
 
     console.log(`[PayMe Webhook] Received ${event_type} for order ${order_number}`);
 
-    // 1. Verify HMAC Signature if secret is configured
-    if (process.env.PAYME_WEBHOOK_SECRET && signature) {
-      const isValid = paymeService.verifyWebhookSignature(req.body, signature);
+    // 1. Verify HMAC signature whenever a secret is configured. This must
+    // fail CLOSED: a configured secret makes the signature mandatory, not
+    // "checked only if the caller happened to send one". The previous
+    // `if (secret && signature)` skipped verification entirely whenever the
+    // x-payme-signature header was simply omitted — letting anyone forge a
+    // "payment successful" webhook for any order_number with no signature
+    // at all, marking it paid and triggering real ticket issuance.
+    if (process.env.PAYME_WEBHOOK_SECRET) {
+      const isValid = Boolean(signature) && paymeService.verifyWebhookSignature(req.body, signature);
       if (!isValid) {
-        console.warn('⚠️ Webhook signature mismatch');
-        return res.status(401).json({ error: 'Invalid HMAC webhook signature' });
+        console.warn('⚠️ Webhook signature missing or invalid');
+        return res.status(401).json({ error: 'Missing or invalid HMAC webhook signature' });
       }
     }
 
@@ -97,6 +103,16 @@ export const handlePayMeWebhook = async (req, res) => {
         return res.status(404).json({ error: `Order ${order_number} not found in database` });
       }
 
+      // The reported amount must match what the order actually owes — a
+      // signature only proves the sender knows the shared secret, it
+      // doesn't validate the payload's contents. Never trust a
+      // client-supplied amount_tsh over the order's own recorded total.
+      const reportedAmount = parseInt(amount_tsh, 10);
+      if (Number.isFinite(reportedAmount) && reportedAmount !== order.total_tsh) {
+        console.warn(`⚠️ Webhook amount mismatch for ${order_number}: reported ${reportedAmount}, order total ${order.total_tsh}`);
+        return res.status(400).json({ error: 'Reported amount does not match order total' });
+      }
+
       // Record payment in ledger
       const paymentKey = idempotency_key || `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const { data: paymentRecord, error: payErr } = await supabase
@@ -107,7 +123,7 @@ export const handlePayMeWebhook = async (req, res) => {
           payme_reference: payme_reference || `PAYME-${Date.now()}`,
           payment_method: provider,
           phone_number: phone_number || order.billing_phone,
-          amount_tsh: parseInt(amount_tsh, 10) || order.total_tsh,
+          amount_tsh: order.total_tsh,
           status: 'successful',
           paid_at: new Date().toISOString()
         }])

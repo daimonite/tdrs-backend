@@ -32,23 +32,31 @@ export const getMyTickets = async (req, res) => {
       `)
       .order('created_at', { ascending: false });
 
-    if (userEmail) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', userEmail)
-        .maybeSingle();
-
-      if (profile) {
-        query = query.eq('profile_id', profile.id);
-      } else {
-        return res.status(200).json({
-          status: 'success',
-          count: 0,
-          data: []
-        });
-      }
+    // Fail CLOSED, not open: if there's no email to resolve an identity
+    // from, we must not fall through and run `query` unfiltered — that
+    // previously returned every ticket for every participant (including
+    // bib_number and qr_verification_token, the token used at gate
+    // check-in) to whoever hit this endpoint with a session that had no
+    // resolvable email.
+    if (!userEmail) {
+      return res.status(403).json({ error: 'Unable to resolve participant identity' });
     }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', userEmail)
+      .maybeSingle();
+
+    if (!profile) {
+      return res.status(200).json({
+        status: 'success',
+        count: 0,
+        data: []
+      });
+    }
+
+    query = query.eq('profile_id', profile.id);
 
     const { data: tickets, error } = await query;
 

@@ -53,6 +53,22 @@ export async function runPhaseEngine() {
         return;
       }
 
+      // event_editions.current_phase is what this backend's own controllers
+      // (cartController, campaignController, contentController,
+      // volunteerController) gate on. event_config.phase is a SEPARATE row
+      // in a separate table, and it's the ONLY thing the frontend
+      // (tourderotary-dsm) ever reads for phase-aware behaviour — see
+      // src/lib/phase.ts. Without this second write, this whole engine
+      // could run forever and never change what a visitor actually sees.
+      const { error: configErr } = await supabase
+        .from('event_config')
+        .update({ phase: derivedPhase, updated_at: new Date().toISOString() })
+        .eq('id', 1);
+
+      if (configErr) {
+        console.error('[Phase Engine] Failed to sync event_config for frontend:', configErr.message);
+      }
+
       console.log(`[Phase Engine] Edition ${edition.year} phase ${edition.current_phase} -> ${derivedPhase}`);
 
       await supabase.from('audit_logs').insert([{

@@ -264,12 +264,52 @@ CREATE POLICY products_write_staff ON products
   WITH CHECK (public.is_staff());
 
 -- ── event_config ──────────────────────────────────────────────────────────
--- Unrelated to RLS, found while cross-checking this table: admin.ts's
--- updateEventPhase() writes `updated_by: actorId` on every phase change,
--- but no migration ever defined that column — every call to it would fail
--- with "column updated_by does not exist" the first time anyone actually
--- used the phase control panel. Adding it here since we're already here.
+-- Two separate bugs found cross-checking this table against what the
+-- frontend actually sends, both unrelated to RLS but fixed here since we're
+-- already touching this table:
+--
+-- 1. updated_by: admin.ts's setEventPhase() writes `updated_by: actorId` on
+--    every call, but no migration ever defined that column.
+-- 2. id type: event_config.id is `UUID DEFAULT uuid_generate_v4()`, but
+--    setEventPhase() always does `.upsert({ id: 1, ... }, { onConflict:
+--    'id' })` — the frontend was written assuming a singleton row keyed by
+--    the literal integer 1. Upserting id:1 against a UUID column throws
+--    "invalid input syntax for type uuid" — this call has never been able
+--    to succeed. Converting id to an INTEGER singleton (collapsing to
+--    whichever existing row was most recently updated, if any) makes the
+--    column match what every caller already assumes.
 ALTER TABLE event_config ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES profiles(id) ON DELETE SET NULL;
+
+DO $$
+DECLARE
+  keep_row RECORD;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'event_config' AND column_name = 'id' AND data_type = 'uuid'
+  ) THEN
+    SELECT phase, event_date, updated_by, updated_at INTO keep_row
+    FROM event_config ORDER BY updated_at DESC NULLS LAST LIMIT 1;
+
+    DELETE FROM event_config;
+
+    ALTER TABLE event_config DROP CONSTRAINT IF EXISTS event_config_pkey;
+    ALTER TABLE event_config ALTER COLUMN id DROP DEFAULT;
+    ALTER TABLE event_config ALTER COLUMN id TYPE INTEGER USING NULL;
+    ALTER TABLE event_config ALTER COLUMN id SET DEFAULT 1;
+    ALTER TABLE event_config ADD CONSTRAINT event_config_pkey PRIMARY KEY (id);
+    ALTER TABLE event_config ADD CONSTRAINT event_config_singleton CHECK (id = 1);
+
+    INSERT INTO event_config (id, phase, event_date, updated_by, updated_at)
+    VALUES (
+      1,
+      COALESCE(keep_row.phase, 'pre_event'),
+      keep_row.event_date,
+      keep_row.updated_by,
+      COALESCE(keep_row.updated_at, NOW())
+    );
+  END IF;
+END $$;
 
 ALTER TABLE event_config ENABLE ROW LEVEL SECURITY;
 

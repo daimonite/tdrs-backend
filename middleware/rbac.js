@@ -19,7 +19,7 @@ export const requireRole = (allowedRoles = []) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    if (allowedRoles.length === 0 || allowedRoles.includes(userRole) || userRole === 'admin') {
+    if (allowedRoles.length === 0 || allowedRoles.includes(userRole) || userRole === 'admin' || userRole === 'hq_admin') {
       return next();
     }
 

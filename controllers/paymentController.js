@@ -9,36 +9,73 @@ import textifySms from '../services/textifySmsService.js';
  */
 export const initiatePayment = async (req, res) => {
   try {
-    const { order_number, amount_tsh, phone_number, provider = 'mpesa' } = req.body;
+    const rawOrderNumber = req.body.order_number || req.body.orderNumber;
+    const rawAmount = req.body.amount_tsh || req.body.amountTsh || req.body.amountTSh;
+    const phoneNumber = req.body.phone_number || req.body.phoneNumber || req.body.phone;
+    const provider = req.body.provider || 'mpesa';
+    const registrationId = req.body.registrationId || req.body.registration_id;
 
-    if (!order_number || !amount_tsh || !phone_number) {
-      return res.status(400).json({ error: 'Missing required payment parameters (order_number, amount_tsh, phone_number)' });
+    let orderNumber = rawOrderNumber;
+    let amountTsh = rawAmount ? parseInt(rawAmount, 10) : 0;
+
+    // If registrationId is supplied without orderNumber, look up or derive matching order
+    if (!orderNumber && registrationId) {
+      const { data: regOrder } = await supabase
+        .from('orders')
+        .select('order_number, total_tsh')
+        .eq('source_registration_id', registrationId)
+        .maybeSingle();
+
+      if (regOrder) {
+        orderNumber = regOrder.order_number;
+        if (!amountTsh) amountTsh = regOrder.total_tsh;
+      } else {
+        const { data: reg } = await supabase
+          .from('registrations')
+          .select('id, amount_tsh')
+          .eq('id', registrationId)
+          .maybeSingle();
+
+        if (reg) {
+          orderNumber = `TDR-REG-${reg.id.slice(0, 8).toUpperCase()}`;
+          if (!amountTsh) amountTsh = reg.amount_tsh || 0;
+        } else {
+          orderNumber = `TDR-REG-${String(registrationId).slice(0, 8).toUpperCase()}`;
+        }
+      }
+    }
+
+    if (!orderNumber || !amountTsh || !phoneNumber) {
+      return res.status(400).json({
+        error: 'Missing required payment parameters (order_number/registrationId, amount, phone)',
+        message: 'Missing required payment parameters (order_number/registrationId, amount, phone)'
+      });
     }
 
     const paymeResult = await paymeService.initiateMobilePayment({
-      orderNumber: order_number,
-      amountTsh: parseInt(amount_tsh, 10),
-      phoneNumber: phone_number,
+      orderNumber: orderNumber,
+      amountTsh: amountTsh,
+      phoneNumber: phoneNumber,
       provider
     });
 
     if (paymeResult.status === 'unconfigured' || paymeResult.status === 'failed') {
-      return res.status(502).json({ error: paymeResult.error || 'Payment provider unavailable' });
+      return res.status(502).json({
+        error: paymeResult.error || 'Payment provider unavailable',
+        message: paymeResult.error || 'Payment provider unavailable'
+      });
     }
 
-    // Flat response shape — matches the frontend's InitiatePaymentResponse
-    // contract exactly (src/lib/api.ts: { checkoutUrl, transactionRef }).
-    // Mobile money is a USSD push, not a redirect flow, so there is no real
-    // "checkout URL" to send someone to — checkoutUrl is null rather than a
-    // fabricated link. The frontend should prompt "check your phone" and
-    // poll GET /api/v1/payments/verify/:transactionRef for status.
     return res.status(200).json({
       checkoutUrl: paymeResult.checkout_url || null,
-      transactionRef: paymeResult.payme_reference || paymeResult.transaction_ref || order_number
+      transactionRef: paymeResult.payme_reference || paymeResult.transaction_ref || orderNumber
     });
   } catch (error) {
     console.error('Payment initiation error:', error);
-    return res.status(500).json({ error: 'Failed to initiate mobile money payment' });
+    return res.status(500).json({
+      error: 'Failed to initiate mobile money payment',
+      message: error.message || 'Failed to initiate mobile money payment'
+    });
   }
 };
 
@@ -250,14 +287,19 @@ export const handlePayMeWebhook = async (req, res) => {
 export const getPaymentVerification = async (req, res) => {
   try {
     const { transactionRef } = req.params;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(transactionRef);
 
-    // transactionRef may be either our order_number, or PayMe's own
-    // reference recorded on the payments row — accept either.
-    const { data: order, error } = await supabase
+    let query = supabase
       .from('orders')
-      .select('status, payments(payme_reference)')
-      .or(`order_number.eq.${transactionRef}`)
-      .maybeSingle();
+      .select('status, payments(payme_reference)');
+
+    if (isUUID) {
+      query = query.or(`order_number.eq.${transactionRef},source_registration_id.eq.${transactionRef},id.eq.${transactionRef}`);
+    } else {
+      query = query.or(`order_number.eq.${transactionRef}`);
+    }
+
+    const { data: order, error } = await query.maybeSingle();
 
     let resolvedOrder = order;
     if (!resolvedOrder) {
@@ -269,22 +311,34 @@ export const getPaymentVerification = async (req, res) => {
       resolvedOrder = paymentMatch?.orders || null;
     }
 
-    if (error && !resolvedOrder) {
-      return res.status(500).json({ error: 'Failed to verify payment' });
-    }
-    if (!resolvedOrder) {
-      return res.status(404).json({ error: 'Transaction not found' });
+    // Direct registration check if a registration UUID was provided
+    if (!resolvedOrder && isUUID) {
+      const { data: reg } = await supabase
+        .from('registrations')
+        .select('payment_status')
+        .eq('id', transactionRef)
+        .maybeSingle();
+
+      if (reg) {
+        return res.status(200).json({
+          status: reg.payment_status === 'completed' ? 'completed' : (reg.payment_status === 'failed' ? 'failed' : 'pending')
+        });
+      }
     }
 
-    // Map our internal order states to the frontend's expected 3-state enum
-    const statusMap = { paid: 'completed', pending: 'pending', processing: 'pending', cancelled: 'failed', expired: 'failed' };
+    if (!resolvedOrder) {
+      return res.status(404).json({ error: 'Transaction not found', message: 'Transaction not found' });
+    }
+
+    // Map internal order states to the frontend's expected 3-state enum: 'completed' | 'pending' | 'failed'
+    const statusMap = { paid: 'completed', completed: 'completed', pending: 'pending', processing: 'pending', cancelled: 'failed', expired: 'failed', failed: 'failed' };
 
     return res.status(200).json({
       status: statusMap[resolvedOrder.status] || 'pending'
     });
   } catch (error) {
     console.error('getPaymentVerification exception:', error);
-    return res.status(500).json({ error: 'Failed to verify payment' });
+    return res.status(500).json({ error: 'Failed to verify payment', message: 'Failed to verify payment' });
   }
 };
 

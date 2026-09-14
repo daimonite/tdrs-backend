@@ -323,16 +323,16 @@ CREATE POLICY event_config_write_staff ON event_config
   USING (public.is_staff())
   WITH CHECK (public.is_staff());
 
--- ── audit_log ─────────────────────────────────────────────────────────────
+-- ── audit_logs ─────────────────────────────────────────────────────────────
 -- Staff-only, and no UPDATE/DELETE policy at all for anyone — the audit
 -- trail should only ever grow, and only via an authenticated staff action.
-ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY audit_log_select_staff ON audit_log
+CREATE POLICY audit_log_select_staff ON audit_logs
   FOR SELECT
   USING (public.is_staff());
 
-CREATE POLICY audit_log_insert_staff ON audit_log
+CREATE POLICY audit_log_insert_staff ON audit_logs
   FOR INSERT
   WITH CHECK (public.is_staff());
 

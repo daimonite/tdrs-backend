@@ -130,14 +130,15 @@ VALUES
 ) ON CONFLICT (id) DO NOTHING;
 
 -- 4. Insert HQ Admin Profile
-INSERT INTO profiles (id, full_name, email, phone_number, role, tshirt_size)
+INSERT INTO profiles (id, full_name, email, phone_number, role, tshirt_size, referral_code)
 VALUES (
   'f2026001-0000-0000-0000-000000000001',
   'HQ Operations Director',
   'ops@tourderotary.co.tz',
   '+255754000001',
   'admin',
-  'L'
+  'L',
+  'TDRADMIN01'
 ) ON CONFLICT (email) DO NOTHING;
 
 -- 5. Insert Official Promo Codes

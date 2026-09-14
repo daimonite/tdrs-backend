@@ -23,16 +23,24 @@ NEXT_PUBLIC_SUPABASE_URL=<same Supabase project as the backend>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<same project's anon key>
 ```
 
-## Important remaining boundary
+## Current integration boundaries & API status
 
-The registration, merchandise, volunteer, sponsor, partner, and HQ screens
-still call Supabase directly; they do not call Express. They will use the
-compatibility tables after the migration, but they do not exercise backend
-controllers. The prospective wrappers in `src/lib/api.ts` are not wired into
-those screens. In particular, its payment payload (`registrationId`,
-`amountTSh`, `phone`) differs from the backend payment payload
-(`order_number`, `amount_tsh`, `phone_number`). Do not point payment UI at the
-backend until one side is converted to a single contract.
+1. **Direct Supabase vs. Express API**:
+   - The registration, merchandise, volunteer, sponsor, partner, and HQ screens call Supabase directly for database reads and writes.
+   - Wrappers defined in `src/lib/api.ts` (`smsApi`, `emailApi`, `frameApi`, `collectiblesApi`) are stubbed client helpers ready for when the frontend opts into server-side processing, but are not yet imported or called from UI components.
+   - `newsletterApi.subscribe` (`POST /api/v1/newsletter/subscribe`) is currently wired and actively consumed by the frontend footer newsletter form.
+
+2. **Payment contract reconciliation**:
+   - `paymentController.js` has been updated to accept both the frontend client contract (`registrationId`, `amountTSh`, `phone`, `provider`) and the backend legacy contract (`order_number`, `amount_tsh`, `phone_number`).
+   - If `registrationId` is passed without an `order_number`, the controller automatically resolves or synthesizes the order reference.
+   - The response shape returns `{ checkoutUrl, transactionRef }`, matching `paymentsApi.initiate` in `src/lib/api.ts`.
+   - Verification via `GET /api/v1/payments/verify/:transactionRef` accepts either order numbers, payment references, or registration IDs.
+
+3. **CORS configuration**:
+   - `ALLOWED_ORIGINS` in `.env` must include `http://localhost:3000` (and `http://127.0.0.1:3000`), otherwise cross-origin browser requests from Next.js will be blocked.
+
+4. **Nested repository notes**:
+   - `tourderotary-dsm/` inside the backend directory is a Git submodule/subproject commit. Fresh clones of the backend repo without `--recurse-submodules` will show an empty folder.
 
 ## Local test sequence
 

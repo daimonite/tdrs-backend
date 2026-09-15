@@ -27,6 +27,16 @@ import newsletterRoutes from './routes/newsletterRoutes.js';
 import commsRoutes from './routes/commsRoutes.js';
 import contentRoutes from './routes/contentRoutes.js';
 
+// Tour de Dar — Triathlon & Community Routes
+import triathlonRoutes from './routes/triathlonRoutes.js';
+import communityRoutes from './routes/communityRoutes.js';
+import teamRoutes from './routes/teamRoutes.js';
+import challengeRoutes from './routes/challengeRoutes.js';
+import resultsRoutes from './routes/resultsRoutes.js';
+import storiesRoutes from './routes/storiesRoutes.js';
+import bibRoutes from './routes/bibRoutes.js';
+import photoRoutes from './routes/photoRoutes.js';
+
 // Middleware & Workers
 import errorHandler from './middleware/errorHandler.js';
 import { runInventoryReservationWorker } from './services/inventoryReservationWorker.js';
@@ -111,6 +121,16 @@ app.use('/api/v1/fitness', fitnessRoutes);
 app.use('/api/v1/newsletter', newsletterRoutes);
 app.use('/api/v1/comms', commsRoutes);
 app.use('/api/v1/content', contentRoutes);
+
+// Tour de Dar — Triathlon & Community
+app.use('/api/v1/triathlon', triathlonRoutes);
+app.use('/api/v1/community', communityRoutes);
+app.use('/api/v1/teams', teamRoutes);
+app.use('/api/v1/challenges', challengeRoutes);
+app.use('/api/v1/results', resultsRoutes);
+app.use('/api/v1/stories', storiesRoutes);
+app.use('/api/v1/bibs', bibRoutes);
+app.use('/api/v1/photos', photoRoutes);
 
 // Background Worker: 7-Day Merchandise Reservation & Expiry Auto-Release Engine
 // Runs every 10 minutes in dev / 1 hour in prod

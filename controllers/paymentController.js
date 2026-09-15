@@ -22,13 +22,49 @@ export const initiatePayment = async (req, res) => {
     if (!orderNumber && registrationId) {
       const { data: regOrder } = await supabase
         .from('orders')
-        .select('order_number, total_tsh')
+        .select('id, order_number, total_tsh')
         .eq('source_registration_id', registrationId)
         .maybeSingle();
 
       if (regOrder) {
         orderNumber = regOrder.order_number;
         if (!amountTsh) amountTsh = regOrder.total_tsh;
+
+        // Registration-flow amount sync. The frontend inserts registrations
+        // directly (src/lib/supabase/queries/participant.ts createRegistration)
+        // with amount_tsh NULL, which makes the migration-010 registrations→
+        // orders trigger create the order with a 0 total. The client is now
+        // declaring the real charge for a specific registrationId, so propagate
+        // it to the linked order, its activity_ticket line item, and the
+        // registration itself. Without this, the PayMe webhook's amount
+        // cross-check (reported amount vs order.total_tsh) rejects every
+        // successfully paid registration. Priced orders are never touched —
+        // a non-zero order total is treated as authoritative.
+        if (amountTsh && !regOrder.total_tsh) {
+          const oR = await supabase
+            .from('orders')
+            .update({
+              subtotal_tsh: amountTsh,
+              total_tsh: amountTsh,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', regOrder.id);
+          if (oR.error) console.error('[PaymentInitiate] Failed to price order:', oR.error.message);
+          const iR = await supabase
+            .from('order_items')
+            .update({ unit_price_tsh: amountTsh, subtotal_tsh: amountTsh })
+            .eq('order_id', regOrder.id)
+            .eq('item_type', 'activity_ticket');
+          if (iR.error) console.error('[PaymentInitiate] Failed to price order item:', iR.error.message);
+          // Best-effort: recording the amount on the registration requires the
+          // service role to be an allowed writer for protected registration
+          // columns (see migration 016); until then this is a non-fatal no-op.
+          const rR = await supabase
+            .from('registrations')
+            .update({ amount_tsh: amountTsh })
+            .eq('id', registrationId);
+          if (rR.error) console.warn('[PaymentInitiate] Registration amount not synced:', rR.error.message);
+        }
       } else {
         const { data: reg } = await supabase
           .from('registrations')
@@ -39,6 +75,14 @@ export const initiatePayment = async (req, res) => {
         if (reg) {
           orderNumber = `TDR-REG-${reg.id.slice(0, 8).toUpperCase()}`;
           if (!amountTsh) amountTsh = reg.amount_tsh || 0;
+          // Persist the client-declared amount onto the registration so any
+          // later lookup (order derivation, webhook mapping) sees the real total.
+          if (amountTsh && !reg.amount_tsh) {
+            await supabase
+              .from('registrations')
+              .update({ amount_tsh: amountTsh })
+              .eq('id', reg.id);
+          }
         } else {
           orderNumber = `TDR-REG-${String(registrationId).slice(0, 8).toUpperCase()}`;
         }
@@ -267,6 +311,35 @@ export const handlePayMeWebhook = async (req, res) => {
           activityTitle: firstActivity.data?.title || 'Tour de Rotary DSM 2026',
           qrToken: issuedTickets[0].qr_verification_token
         });
+      }
+
+      // Registration-flow completion. Orders created by the migration-010
+      // registrations→orders trigger carry source_registration_id. Mark the
+      // originating registration paid/confirmed so the participant dashboard
+      // (src/lib/supabase/queries/participant.ts getMyRegistrations, admin
+      // revenue rollups) reflects reality, and backfill the source link on
+      // the webhook-issued ticket FIRST so the underlying status-sync trigger
+      // can't mint a duplicate ticket for the same registration. Writing the
+      // protected columns requires migration 016 (service role allowed); rows
+      // without a source registration are untouched (cart flow).
+      if (order.source_registration_id && issuedTickets.length > 0) {
+        const issuedTicket = issuedTickets[0];
+        const { error: linkErr } = await supabase
+          .from('tickets')
+          .update({ source_registration_id: order.source_registration_id })
+          .eq('id', issuedTicket.id);
+        if (linkErr) console.warn('[Webhook] Could not link ticket to registration:', linkErr.message);
+
+        const { error: regErr } = await supabase
+          .from('registrations')
+          .update({
+            status: 'confirmed',
+            payment_status: 'completed',
+            amount_tsh: order.total_tsh,
+            bib_number: issuedTicket.bib_number
+          })
+          .eq('id', order.source_registration_id);
+        if (regErr) console.warn('[Webhook] Could not complete registration (migration 016 required?):', regErr.message);
       }
 
       return res.status(200).json({

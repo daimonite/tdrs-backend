@@ -9,6 +9,8 @@ export const getMyTickets = async (req, res) => {
   try {
     const userEmail = req.user.email;
 
+    // tickets has two FKs to profiles (profile_id + checked_in_by):
+    // the embed must be disambiguated or PostgREST rejects it as ambiguous.
     let query = supabase
       .from('tickets')
       .select(`
@@ -25,7 +27,7 @@ export const getMyTickets = async (req, res) => {
           start_time,
           flag_off_location
         ),
-        profiles (
+        profiles:profile_id (
           full_name,
           tshirt_size
         )
@@ -94,7 +96,7 @@ export const getTicketByQrToken = async (req, res) => {
         checked_in_at,
         check_in_station,
         activities (title, category, distance_km, start_time, flag_off_location),
-        profiles (full_name, tshirt_size)
+        profiles:profile_id (full_name, tshirt_size)
       `)
       .eq('qr_verification_token', qr_token)
       .maybeSingle();
@@ -134,7 +136,7 @@ export const checkInTicket = async (req, res) => {
         checked_in,
         checked_in_at,
         check_in_station,
-        profiles (full_name)
+        profiles:profile_id (full_name)
       `)
       .eq('qr_verification_token', qr_token)
       .maybeSingle();
@@ -174,7 +176,7 @@ export const checkInTicket = async (req, res) => {
         checked_in,
         checked_in_at,
         check_in_station,
-        profiles (full_name)
+        profiles:profile_id (full_name)
       `)
       .single();
 

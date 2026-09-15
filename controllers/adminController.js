@@ -208,7 +208,8 @@ export const getOrdersList = async (req, res) => {
   try {
     const { data: orders, error } = await supabase
       .from('orders')
-      .select('*, profiles(full_name, email, phone_number), order_items(*)')
+      // orders has two FKs to profiles (profile_id + user_id): disambiguate.
+      .select('*, profiles:profile_id(full_name, email, phone_number), order_items(*)')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -844,7 +845,8 @@ export const exportRegistrationsCsv = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('tickets')
-      .select('bib_number, checked_in, checked_in_at, created_at, profiles(full_name, email, phone_number), activities(title, category)')
+      // tickets has two FKs to profiles (profile_id + checked_in_by): disambiguate.
+      .select('bib_number, checked_in, checked_in_at, created_at, profiles:profile_id(full_name, email, phone_number), activities(title, category)')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -876,7 +878,7 @@ export const exportRevenueCsv = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('orders')
-      .select('order_number, status, subtotal_tsh, discount_tsh, total_tsh, currency, created_at, profiles(full_name, email)')
+      .select('order_number, status, subtotal_tsh, discount_tsh, total_tsh, currency, created_at, profiles:profile_id(full_name, email)')
       .order('created_at', { ascending: false });
 
     if (error) {

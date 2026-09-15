@@ -94,7 +94,9 @@ export function buildFrameSvg({ frame, athleteName, badgeLabel, bibLine }) {
 export async function buildTwibbonComposition({ userId, frameId, ticketId, photoUrl }) {
   let ticketQuery = supabase
     .from('tickets')
-    .select('bib_number, profiles(full_name), activities(title, category)')
+    // tickets has two FKs to profiles (profile_id + checked_in_by):
+    // the embed must be disambiguated or PostgREST rejects it as ambiguous.
+    .select('bib_number, profiles:profile_id(full_name), activities(title, category)')
     .eq('profile_id', userId);
 
   if (ticketId) {
@@ -240,7 +242,7 @@ export const getOpenGraphCard = async (req, res) => {
 
     const { data: ticket, error } = await supabase
       .from('tickets')
-      .select('bib_number, profiles(full_name), activities(title)')
+      .select('bib_number, profiles:profile_id(full_name), activities(title)')
       .or(`bib_number.eq.${bib_or_id},id.eq.${bib_or_id}`)
       .maybeSingle();
 

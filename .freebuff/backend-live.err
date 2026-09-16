@@ -1,0 +1,43 @@
+[PayMe Africa] Live PAYME_API_KEY not set in environment.
+Error fetching posts: {
+  code: 'PGRST205',
+  details: null,
+  hint: "Perhaps you meant the table 'public.communication_templates'",
+  message: "Could not find the table 'public.community_posts' in the schema cache"
+}
+Error fetching teams: {
+  code: 'PGRST205',
+  details: null,
+  hint: "Perhaps you meant the table 'public.referrals'",
+  message: "Could not find the table 'public.teams' in the schema cache"
+}
+Error fetching challenges: {
+  code: 'PGRST205',
+  details: null,
+  hint: "Perhaps you meant the table 'public.social_shares'",
+  message: "Could not find the table 'public.challenges' in the schema cache"
+}
+Error fetching stories: {
+  code: 'PGRST205',
+  details: null,
+  hint: null,
+  message: "Could not find the table 'public.why_i_participate' in the schema cache"
+}
+Error fetching photos: {
+  code: 'PGRST205',
+  details: null,
+  hint: null,
+  message: "Could not find the table 'public.race_photos' in the schema cache"
+}
+Error fetching my bib: {
+  code: 'PGRST205',
+  details: null,
+  hint: "Perhaps you meant the table 'public.digital_collectibles'",
+  message: "Could not find the table 'public.digital_bibs' in the schema cache"
+}
+Error creating post: {
+  code: 'PGRST205',
+  details: null,
+  hint: "Perhaps you meant the table 'public.communication_templates'",
+  message: "Could not find the table 'public.community_posts' in the schema cache"
+}

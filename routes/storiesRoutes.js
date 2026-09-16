@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.js';
-import { authorize } from '../middleware/rbac.js';
+import auth from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
 import { getStories, submitStory, approveStory } from '../controllers/whyIParticipateController.js';
 
 const router = Router();
 
 router.get('/', getStories);
-router.post('/', authenticate, submitStory);
-router.patch('/:storyId/approve', authenticate, authorize(['hq_admin', 'admin']), approveStory);
+router.post('/', auth(), submitStory);
+router.patch('/:storyId/approve', auth(), requireRole(['admin']), approveStory);
 
 export default router;

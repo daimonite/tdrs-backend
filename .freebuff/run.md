@@ -50,7 +50,68 @@ ode_modules\next\dist\bin\next dev -p 3000`.
   `migrations/014_complete_frontend_backend_sync.sql` §5 (passwords are in
   that committed file; do not reuse them anywhere real).
 
-## Verified integration points (2026-09-15)
+## Verified integration points (2026-09-15, re-verified after new triathlon/community batch)
+
+NOTE (2026-09-15, later): a large new batch landed (controllers team/challenge/
+whyIParticipate/bib/photo/results/community/triathlon + routes + migrations
+015-017 + 3 worker services). It shipped with two boot-breaking bugs, both
+fixed:
+  1. All 8 new controllers imported a nonexistent `config/supabaseClient.js`
+     (real client: `config/supabase.js`, default export) — backend could not
+     boot at all.
+  2. New route files used bare `auth`/`{ authenticate }`/`{ authorize }` in
+     route chains. `auth` is a middleware FACTORY — bare usage makes Express
+     call the factory as middleware, which returns the inner function without
+     calling next(), so requests HANG forever (no response, no timeout).
+     Correct pattern: `auth()` inline, `requireRole([...])` from rbac.js.
+     This hang is silent — always test a protected route after wiring it.
+
+PENDING (needs Supabase dashboard access, not code): migration
+`017_tour_de_dar_triathlon_and_community.sql` has NOT been applied to the
+database. Until it is, `/api/v1/teams`, `/api/v1/challenges`,
+`/api/v1/community/posts`, `/api/v1/stories`, `/api/v1/results`,
+`/api/v1/bibs`, `/api/v1/triathlon/map`, `/api/v1/triathlon/impact` return
+500 with PGRST205 ("Could not find the table ... in the schema cache"), and
+`/api/v1/triathlon/overview` returns 200 with empty stages/categories.
+Auth gating on all of these is verified working (401s, no hangs).
+
+NOTE (2026-09-15, schema-alignment audit): the 8 new controllers were
+written against columns that DO NOT exist in 017's DDL and would have 500'd
+forever even after the migration landed. All were rewritten against the
+real schema — the key traps for future work:
+  - `community_posts` uses `user_id`/`status` ('published'|'flagged'|'hidden')
+    and denormalized `likes_count`/`comments_count` (no trigger in 017 —
+    communityController syncs them after reactions/comments).
+  - Challenges live in `challenges`/`user_challenges` (017). There is NO
+    `pre_race_challenges` table. `completion_count` is incremented via the
+    `increment_challenge_completion` SQL function (appended to 017).
+  - `why_i_participate` stores `quote` + `display_name` (NOT NULL) — not
+    `story_text`. Approval gates the public read on `is_approved`
+    (ALTER added to 017).
+  - `triathlon_results` ranks are `rank_overall`/`rank_category`/
+    `rank_gender`, category is `category_slug` — NOT `overall_rank`/
+    `category_id`. There is no `profiles.community_points` column.
+  - `race_photos` has NO `is_published` column (all rows are public) and
+    `bib_numbers` is TEXT[] — string arrays, not ints.
+  - `teams` requires a UNIQUE `slug` (generated from the name) and keeps a
+    denormalized `member_count` (synced by teamController).
+  - `digital_bibs.generateBib` upserts `onConflict:'user_id'` — legal only
+    with the `uq_digital_bibs_user` unique index (added to 017).
+  - PostgREST embeds (`profiles:user_id (...)`) resolve by the FK's own
+    column name, not the referenced table's uniqueness — no ambiguity here.
+
+§15 MODERATION (brief requirement) — implemented: POST
+`/community/posts/:postId/report` (any participant; reasons spam/abuse/
+inappropriate/misinformation/other), GET `/community/reports` + PATCH
+`/community/posts/:postId/moderate` (admin). Backed by a `post_reports`
+table (appended to 017; idempotent per reporter+post; flagged posts leave
+the public feed, moderation decisions resolve open reports + write
+audit_logs).
+
+§17 EVENT LIFECYCLE — social writes (post/react/comment) are gated by
+`event_lifecycle.current_mode`: writes succeed only in LIVE mode and get
+403 SOCIAL_CLOSED in MEMORY/ARCHIVE; reads stay open. Fails OPEN if the
+table/row is missing (pre-017), so the gate never takes the API down.
 
 - Frontend session token → backend `Authorization: Bearer` on
   `/api/v1/participant/profile`, `/api/v1/tickets` (200).
@@ -63,3 +124,10 @@ ode_modules\next\dist\bin\next dev -p 3000`.
 - Known gap: frontend has no checkout UI wired to
   `POST /api/v1/payments/initiate` yet; event date differs between frontend
   config (1 Nov 2026) and DB seed (18 Oct 2026).
+- 2026-09-15 unauthenticated suite (post-alignment): health 200, CORS 204,
+  newsletter 201, payments-initiate 502 (PayMe unconfigured — expected),
+  community/teams/challenges/stories/photos 500 (PGRST205 only — 017
+  pending), bibs/me + all social writes 401 fast (no hangs),
+  leaderboard?board=bogus 400, triathlon overview + live-activity 200.
+  The migration-017 paste must happen in the Supabase SQL editor; after it
+  lands, re-run the suite and expect the 500s to become 200/201/401.

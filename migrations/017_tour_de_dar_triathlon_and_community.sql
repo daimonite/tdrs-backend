@@ -359,3 +359,61 @@ CREATE POLICY "Auth write teams" ON public.teams FOR INSERT WITH CHECK (auth.uid
 CREATE POLICY "Auth write team_members" ON public.team_members FOR INSERT WITH CHECK (auth.uid() = user_id OR auth.role() = 'service_role');
 CREATE POLICY "Auth write user_challenges" ON public.user_challenges FOR ALL USING (auth.uid() = user_id OR auth.role() = 'service_role');
 CREATE POLICY "Auth write research_consents" ON public.research_consents FOR ALL USING (auth.uid() = user_id OR auth.role() = 'service_role');
+
+-- =============================================================================
+-- §15 MODERATION — REPORTS (designed into the system, not added later)
+--
+-- post_reports.id is a TEXT PK so a duplicate report (same reporter, same
+-- post) upserts onto the existing row instead of erroring — the idempotent
+-- "one report per user per post" pattern. RLS: a reporter sees only their own
+-- reports; the backend reads/writes everything with the service role.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.post_reports (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  post_id UUID NOT NULL REFERENCES public.community_posts(id) ON DELETE CASCADE,
+  reporter_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL CHECK (reason IN ('spam', 'abuse', 'inappropriate', 'misinformation', 'other')),
+  details TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+  moderator_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (post_id, reporter_id)
+);
+
+ALTER TABLE public.post_reports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Auth report posts" ON public.post_reports FOR INSERT WITH CHECK (auth.uid() = reporter_id OR auth.role() = 'service_role');
+CREATE POLICY "Read own reports" ON public.post_reports FOR SELECT USING (auth.uid() = reporter_id OR auth.role() = 'service_role');
+
+CREATE INDEX IF NOT EXISTS idx_post_reports_queue ON public.post_reports (status, created_at DESC);
+
+-- =============================================================================
+-- §9 CHALLENGES — completion counter helper
+--
+-- challengeController increments challenges.completion_count through this
+-- SECURITY DEFINER function so the write works under the anon/participant
+-- RLS policies too (the service role bypasses RLS, but a participant-driven
+-- completion path should not rely on that).
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.increment_challenge_completion(challenge_id UUID)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE public.challenges
+  SET completion_count = completion_count + 1
+  WHERE id = challenge_id;
+$$;
+
+-- §4 WHY I PARTICIPATE — admin-approved public collection.
+-- (storiesRoutes exposes PATCH /stories/:storyId/approve; the public read
+-- gates on is_approved.)
+ALTER TABLE public.why_i_participate ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- §6 DIGITAL BIBS — generateBib upserts with onConflict:'user_id', which
+-- PostgREST only accepts if a unique index exists on that column.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_digital_bibs_user ON public.digital_bibs (user_id);
+
+-- NOTE: This migration must be applied via the Supabase dashboard
+-- (SQL Editor) — the project has no programmatic migration runner.

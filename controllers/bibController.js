@@ -11,7 +11,7 @@ import supabase from '../config/supabase.js';
 export const getBib = async (req, res) => {
   try {
     const { identifier } = req.params;
-    let query = supabase.from('digital_bibs').select('*, profiles:user_id (full_name, avatar_url)');
+    let query = supabase.from('digital_bibs').select('*, profiles:user_id (full_name)');
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)) {
       query = query.eq('user_id', identifier);
     } else if (/^\d+$/.test(identifier)) {

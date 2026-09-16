@@ -95,7 +95,7 @@ export const getChallengeLeaderboard = async (req, res) => {
     const { limit = 50 } = req.query;
     const { data, error } = await supabase
       .from('user_challenges')
-      .select('completed_at, profiles:user_id (full_name, avatar_url)')
+      .select('completed_at, profiles:user_id (full_name)')
       .eq('challenge_id', challengeId).eq('status', 'completed').not('completed_at', 'is', null)
       .order('completed_at', { ascending: true }).limit(parseInt(limit));
     if (error) throw error;

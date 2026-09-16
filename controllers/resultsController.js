@@ -6,7 +6,7 @@ export const getResults = async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     let query = supabase
       .from('triathlon_results')
-      .select('*, profiles:user_id (full_name, avatar_url)', { count: 'exact' })
+      .select('*, profiles:user_id (full_name)', { count: 'exact' })
       .order('rank_overall', { ascending: true })
       .range(offset, offset + parseInt(limit) - 1);
     if (category) query = query.eq('category_slug', category);
@@ -27,7 +27,7 @@ export const getLeaderboard = async (req, res) => {
     if (board === 'performance') {
       ({ data, error } = await supabase
         .from('triathlon_results')
-        .select('rank_overall, rank_category, total_time_seconds, swim_time_seconds, bike_time_seconds, run_time_seconds, athlete_name, profiles:user_id (full_name, avatar_url)')
+        .select('rank_overall, rank_category, total_time_seconds, swim_time_seconds, bike_time_seconds, run_time_seconds, athlete_name, profiles:user_id (full_name)')
         .not('total_time_seconds', 'is', null)
         .eq('status', 'finished')
         .order('rank_overall', { ascending: true })
@@ -44,7 +44,7 @@ export const getLeaderboard = async (req, res) => {
       // PARTICIPATION board: most recent participants joining the movement.
       ({ data, error } = await supabase
         .from('registrations')
-        .select('profiles:user_id (full_name, avatar_url), activity_slug, created_at')
+        .select('profiles:user_id (full_name), activity_slug, created_at')
         .neq('status', 'cancelled')
         .order('created_at', { ascending: false })
         .limit(parseInt(limit)));

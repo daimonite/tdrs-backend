@@ -13,7 +13,7 @@ export const getStories = async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     let query = supabase
       .from('why_i_participate')
-      .select('*, profiles:user_id (full_name, avatar_url)', { count: 'exact' })
+      .select('*, profiles:user_id (full_name)', { count: 'exact' })
       .eq('is_approved', true)
       .order('is_featured', { ascending: false })
       .order('created_at', { ascending: false })

@@ -168,7 +168,7 @@ setInterval(async () => {
 // Global Error Handler
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 8800;
+const PORT = parseInt(String(process.env.PORT || '8800').trim(), 10) || 8800;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
   console.log(`🚲 TOUR DE ROTARY DSM 2026 BACKEND API RUNNING ON PORT ${PORT}`);

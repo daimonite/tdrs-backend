@@ -95,3 +95,106 @@ Error creating post: {
 [Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
 [Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
 [Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Reservation Worker] Error querying expired reservations: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: ConnectTimeoutError: Connect Timeout Error (attempted address: zovnkeaoorrxfjdxcmlk.supabase.co:443, timeout: 10000ms) (UND_ERR_CONNECT_TIMEOUT)\n' +
+    'ConnectTimeoutError: Connect Timeout Error (attempted address: zovnkeaoorrxfjdxcmlk.supabase.co:443, timeout: 10000ms)\n' +
+    '    at onConnectTimeout (node:internal/deps/undici/undici:1991:23)\n' +
+    '    at Immediate._onImmediate (node:internal/deps/undici/undici:1957:35)\n' +
+    '    at process.processImmediate (node:internal/timers:504:21)',
+  hint: '',
+  code: ''
+}
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Reservation Worker] Error querying expired reservations: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: unable to get local issuer certificate (UNABLE_TO_GET_ISSUER_CERT_LOCALLY)\n' +
+    'Error: unable to get local issuer certificate\n' +
+    '    at TLSSocket.onConnectSecure (node:internal/tls/wrap:1742:34)\n' +
+    '    at TLSSocket.emit (node:events:509:28)\n' +
+    '    at TLSSocket._finishInit (node:internal/tls/wrap:1179:8)\n' +
+    '    at ssl.onhandshakedone (node:internal/tls/wrap:965:12)',
+  hint: '',
+  code: ''
+}
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Reservation Worker] Error querying expired reservations: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: unable to get local issuer certificate (UNABLE_TO_GET_ISSUER_CERT_LOCALLY)\n' +
+    'Error: unable to get local issuer certificate\n' +
+    '    at TLSSocket.onConnectSecure (node:internal/tls/wrap:1742:34)\n' +
+    '    at TLSSocket.emit (node:events:509:28)\n' +
+    '    at TLSSocket._finishInit (node:internal/tls/wrap:1179:8)\n' +
+    '    at ssl.onhandshakedone (node:internal/tls/wrap:965:12)',
+  hint: '',
+  code: ''
+}
+Error fetching posts: {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column profiles_1.avatar_url does not exist'
+}
+Error fetching posts: {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column profiles_1.avatar_url does not exist'
+}
+Error fetching posts: {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column profiles_1.avatar_url does not exist'
+}
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed

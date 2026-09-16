@@ -28,7 +28,7 @@ export const getTeams = async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     let query = supabase
       .from('teams')
-      .select('*, captain:captain_id (full_name, avatar_url)', { count: 'exact' })
+      .select('*, captain:captain_id (full_name)', { count: 'exact' })
       .order('member_count', { ascending: false })
       .order('created_at', { ascending: false })
       .range(offset, offset + parseInt(limit) - 1);
@@ -49,8 +49,8 @@ export const getTeamDetail = async (req, res) => {
   try {
     const { teamId } = req.params;
     const [teamRes, membersRes] = await Promise.all([
-      supabase.from('teams').select('*, captain:captain_id (full_name, avatar_url)').eq('id', teamId).maybeSingle(),
-      supabase.from('team_members').select('*, profiles:user_id (full_name, avatar_url)').eq('team_id', teamId).order('joined_at', { ascending: true })
+      supabase.from('teams').select('*, captain:captain_id (full_name)').eq('id', teamId).maybeSingle(),
+      supabase.from('team_members').select('*, profiles:user_id (full_name)').eq('team_id', teamId).order('joined_at', { ascending: true })
     ]);
     if (teamRes.error) throw teamRes.error;
     if (!teamRes.data) return res.status(404).json({ error: 'Team not found' });

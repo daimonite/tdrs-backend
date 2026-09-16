@@ -64,7 +64,7 @@ export const getPosts = async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     let query = supabase
       .from('community_posts')
-      .select('*, profiles:user_id (full_name, avatar_url)', { count: 'exact' })
+      .select('*, profiles:user_id (full_name)', { count: 'exact' })
       .eq('status', 'published')
       .order('created_at', { ascending: false })
       .range(offset, offset + parseInt(limit) - 1);
@@ -96,7 +96,7 @@ export const createPost = async (req, res) => {
     const { data, error } = await supabase
       .from('community_posts')
       .insert({ user_id, content: content.trim(), post_type, discipline, image_url, status: 'published' })
-      .select('*, profiles:user_id (full_name, avatar_url)')
+      .select('*, profiles:user_id (full_name)')
       .single();
     if (error) throw error;
     res.status(201).json({ success: true, data });
@@ -151,7 +151,7 @@ export const addComment = async (req, res) => {
     const { data, error } = await supabase
       .from('post_comments')
       .insert({ post_id: postId, user_id, content: content.trim() })
-      .select('*, profiles:user_id (full_name, avatar_url)').single();
+      .select('*, profiles:user_id (full_name)').single();
     if (error) throw error;
     await syncPostCounters(postId);
     res.status(201).json({ success: true, data });
@@ -165,7 +165,7 @@ export const getComments = async (req, res) => {
   try {
     const { postId } = req.params;
     const { data, error } = await supabase
-      .from('post_comments').select('*, profiles:user_id (full_name, avatar_url)')
+      .from('post_comments').select('*, profiles:user_id (full_name)')
       .eq('post_id', postId).order('created_at', { ascending: true });
     if (error) throw error;
     res.json({ success: true, data: data || [] });
@@ -236,7 +236,7 @@ export const moderatePost = async (req, res) => {
       .from('community_posts')
       .update({ status })
       .eq('id', postId)
-      .select('*, profiles:user_id (full_name, avatar_url)')
+      .select('*, profiles:user_id (full_name)')
       .single();
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'Post not found' });

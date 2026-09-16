@@ -47,9 +47,13 @@ export const getMyBib = async (req, res) => {
 // Admin-only (see routes/bibRoutes.js): issues a bib for a participant.
 export const generateBib = async (req, res) => {
   try {
-    const { user_id, bib_number, athlete_name, category_name, team_name } = req.body;
-    if (!user_id || !bib_number || !athlete_name || !category_name) {
-      return res.status(400).json({ error: 'user_id, bib_number, athlete_name and category_name are required' });
+    let { user_id, bib_number, athlete_name, category_name, team_name } = req.body || {};
+    if (!user_id || !bib_number || !category_name) {
+      return res.status(400).json({ error: 'user_id, bib_number and category_name are required' });
+    }
+    if (!athlete_name) {
+      const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', user_id).maybeSingle();
+      athlete_name = prof?.full_name || 'Athlete';
     }
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id)) {
       return res.status(400).json({ error: 'user_id must be a UUID' });

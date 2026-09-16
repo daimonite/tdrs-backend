@@ -113,3 +113,36 @@ export const getCommunityImpact = async (req, res) => {
     res.status(500).json({ error: 'Failed to retrieve community impact data' });
   }
 };
+
+/**
+ * PATCH /api/v1/triathlon/lifecycle
+ * Update the event lifecycle mode: 'live', 'memory', or 'archive'.
+ * Requires admin.
+ */
+export const updateLifecycleMode = async (req, res) => {
+  try {
+    const { mode } = req.body;
+    const VALID_MODES = ['live', 'memory', 'archive'];
+    if (!mode || !VALID_MODES.includes(mode)) {
+      return res.status(400).json({ error: `Invalid mode. Allowed values: ${VALID_MODES.join(', ')}` });
+    }
+
+    const updates = { current_mode: mode, updated_at: new Date().toISOString() };
+    if (mode === 'memory') updates.memory_mode_unlocked_at = new Date().toISOString();
+    if (mode === 'archive') updates.archive_date = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('event_lifecycle')
+      .update(updates)
+      .neq('current_mode', 'custom_never_match')
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({ success: true, mode, data, message: `Event lifecycle updated to '${mode}'` });
+  } catch (error) {
+    console.error('Error updating lifecycle mode:', error);
+    res.status(500).json({ error: 'Failed to update lifecycle mode' });
+  }
+};

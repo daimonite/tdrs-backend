@@ -117,6 +117,13 @@ export const updateEventPhase = async (req, res) => {
       return res.status(500).json({ error: 'Failed to update event phase in database' });
     }
 
+    // Synchronize frontend event_config and Tour de Dar event_lifecycle
+    const lifecycleMode = new_phase === 'post_event' ? 'memory' : 'live';
+    await Promise.allSettled([
+      supabase.from('event_config').update({ phase: new_phase, updated_at: new Date().toISOString() }).eq('id', 1),
+      supabase.from('event_lifecycle').update({ current_mode: lifecycleMode, updated_at: new Date().toISOString() }).neq('current_mode', 'custom')
+    ]);
+
     // Record audit log
     await supabase.from('audit_logs').insert([{
       action: 'UPDATE_EVENT_PHASE',

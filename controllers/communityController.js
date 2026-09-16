@@ -6,7 +6,7 @@ import supabase from '../config/supabase.js';
 // briefly; a missing row or table (pre-migration-017) fails OPEN so existing
 // behaviour is never regressed by the gate itself.
 let lifecycleCache = { mode: null, at: 0 };
-const LIFECYCLE_TTL_MS = 60 * 1000;
+const LIFECYCLE_TTL_MS = 1000;
 
 async function resolveLifecycleMode() {
   if (Date.now() - lifecycleCache.at < LIFECYCLE_TTL_MS && lifecycleCache.mode) {

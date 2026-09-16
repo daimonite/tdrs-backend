@@ -64,7 +64,7 @@ export const getTeamDetail = async (req, res) => {
 
 export const createTeam = async (req, res) => {
   try {
-    const { name, story, team_type = 'community', is_relay = false, logo_url } = req.body;
+    const { name, story, team_type = 'community', is_relay = false, logo_url } = req.body || {};
     const captain_id = req.user?.id;
     if (!captain_id) return res.status(401).json({ error: 'Authentication required' });
     if (!name || name.trim().length === 0) return res.status(400).json({ error: 'Team name is required' });
@@ -152,3 +152,59 @@ export const leaveTeam = async (req, res) => {
     res.status(500).json({ error: 'Failed to leave team' });
   }
 };
+
+export const updateTeam = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { name, story, team_type, logo_url } = req.body;
+    const user_id = req.user?.id;
+    const user_role = req.user?.role;
+
+    if (!user_id) return res.status(401).json({ error: 'Authentication required' });
+
+    const { data: team, error: fetchErr } = await supabase
+      .from('teams')
+      .select('*')
+      .eq('id', teamId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+
+    const isCaptain = team.captain_id === user_id;
+    const isAdmin = user_role === 'admin' || user_role === 'hq_admin';
+
+    if (!isCaptain && !isAdmin) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Only the team captain or an admin can update this team'
+      });
+    }
+
+    const updates = {};
+    if (name && name.trim()) updates.name = name.trim();
+    if (story !== undefined) updates.story = story?.trim() || null;
+    if (logo_url !== undefined) updates.logo_url = logo_url || null;
+    if (team_type) {
+      if (!TEAM_TYPES.includes(team_type)) {
+        return res.status(400).json({ error: 'Invalid team_type. Use: ' + TEAM_TYPES.join(', ') });
+      }
+      updates.team_type = team_type;
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('teams')
+      .update(updates)
+      .eq('id', teamId)
+      .select('*, captain:captain_id (full_name)')
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({ success: true, data: updated, message: 'Team updated successfully' });
+  } catch (err) {
+    console.error('Error updating team:', err);
+    res.status(500).json({ error: 'Failed to update team' });
+  }
+};
+

@@ -41,3 +41,57 @@ Error creating post: {
   hint: "Perhaps you meant the table 'public.communication_templates'",
   message: "Could not find the table 'public.community_posts' in the schema cache"
 }
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Reservation Worker] Error querying expired reservations: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND zovnkeaoorrxfjdxcmlk.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND zovnkeaoorrxfjdxcmlk.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Reservation Worker] Error querying expired reservations: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND zovnkeaoorrxfjdxcmlk.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND zovnkeaoorrxfjdxcmlk.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Reservation Worker] Error querying expired reservations: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND zovnkeaoorrxfjdxcmlk.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND zovnkeaoorrxfjdxcmlk.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Comm Dispatch Worker] Failed to query communication_queue: TypeError: fetch failed
+[Phase Engine] Failed to read event edition: TypeError: fetch failed

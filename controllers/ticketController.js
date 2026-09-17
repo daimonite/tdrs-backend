@@ -20,12 +20,11 @@ export const getMyTickets = async (req, res) => {
         checked_in,
         checked_in_at,
         check_in_station,
-        activities (
-          title,
-          category,
-          distance_km,
-          start_time,
-          flag_off_location
+        race_categories:race_categories!activity_id (
+          name,
+          slug,
+          format,
+          description
         ),
         profiles:profile_id (
           full_name,
@@ -95,7 +94,7 @@ export const getTicketByQrToken = async (req, res) => {
         checked_in,
         checked_in_at,
         check_in_station,
-        activities (title, category, distance_km, start_time, flag_off_location),
+        race_categories:race_categories!activity_id (name, slug, format, description),
         profiles:profile_id (full_name, tshirt_size)
       `)
       .eq('qr_verification_token', qr_token)

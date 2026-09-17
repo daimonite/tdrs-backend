@@ -1,5 +1,8 @@
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 import supabase from './config/supabase.js';
+
+const authClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 async function run() {
   const results = {};
@@ -22,7 +25,7 @@ async function run() {
 
   // 1. Signup / Auth
   console.log('1. Signup / Auth:');
-  const { data: authUser, error: authErr } = await supabase.auth.signInWithPassword({
+  const { data: authUser, error: authErr } = await authClient.auth.signInWithPassword({
     email: 'user@gmail.com',
     password: 'user1234'
   });
@@ -57,7 +60,7 @@ async function run() {
   });
   console.log('  -> Update by captain:', updateCaptainRes.status);
 
-  const { data: user2 } = await supabase.auth.signInWithPassword({
+  const { data: user2 } = await authClient.auth.signInWithPassword({
     email: 'participant@gmail.com',
     password: 'user1234'
   });
@@ -324,13 +327,18 @@ async function run() {
   console.log('  -> Missing signature status (expected 401):', noSigRes.status);
 
   const testOrderNumber = 'ORD-VERIFY-' + Date.now();
-  await supabase.from('orders').insert({
+  const { data: editionsList } = await supabase.from('event_editions').select('id');
+  const editionId = editionsList?.[0]?.id || '30fa6cb4-8b80-4c1d-ac4c-0a3819477fb1';
+  const { error: ordInsertErr } = await supabase.from('orders').insert({
     order_number: testOrderNumber,
+    profile_id: userProfile.data.data.id,
     user_id: userProfile.data.data.id,
+    edition_id: editionId,
+    billing_phone: '+255700000000',
     total_tsh: 75000,
-    status: 'pending',
-    payment_method: 'mpesa'
+    status: 'pending'
   });
+  if (ordInsertErr) console.error('  -> Failed to insert test order:', ordInsertErr);
 
   const validPayload = {
     order_number: testOrderNumber,

@@ -9,19 +9,19 @@ const DISCIPLINES = ['triathlon', 'swim', 'bike', 'run'];
 
 export const getStories = async (req, res) => {
   try {
-    const { page = 1, limit = 12, featured } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { page, limit, offset } = req.pagination || { page: 1, limit: 12, offset: 0 };
+    const { featured } = req.query;
     let query = supabase
       .from('why_i_participate')
       .select('*, profiles:user_id (full_name)', { count: 'exact' })
       .eq('is_approved', true)
       .order('is_featured', { ascending: false })
       .order('created_at', { ascending: false })
-      .range(offset, offset + parseInt(limit) - 1);
+      .range(offset, offset + limit - 1);
     if (featured === 'true') query = query.eq('is_featured', true);
     const { data, error, count } = await query;
     if (error) throw error;
-    res.json({ success: true, data, pagination: { page: parseInt(page), limit: parseInt(limit), total: count, pages: Math.ceil((count || 0) / parseInt(limit)) } });
+    res.json({ success: true, data, pagination: { page, limit, total: count, pages: Math.ceil((count || 0) / limit) } });
   } catch (err) {
     console.error('Error fetching stories:', err);
     res.status(500).json({ error: 'Failed to retrieve stories' });

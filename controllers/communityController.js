@@ -13,18 +13,30 @@ async function resolveLifecycleMode() {
     return lifecycleCache.mode;
   }
   try {
-    const { data, error } = await supabase
-      .from('event_lifecycle')
-      .select('current_mode')
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    lifecycleCache = { mode: data?.current_mode || 'live', at: Date.now() };
+    const [lifecycleRes, configRes] = await Promise.all([
+      supabase.from('event_lifecycle').select('current_mode').limit(1).maybeSingle(),
+      supabase.from('event_config').select('phase').eq('id', 1).maybeSingle()
+    ]);
+
+    const lifeMode = lifecycleRes.data?.current_mode;
+    const confPhase = configRes.data?.phase;
+
+    let mode = 'live';
+    if (confPhase === 'archive' || lifeMode === 'archive') {
+      mode = 'archive';
+    } else if (confPhase === 'post_event' || lifeMode === 'memory') {
+      mode = 'memory';
+    } else {
+      mode = lifeMode || 'live';
+    }
+
+    lifecycleCache = { mode, at: Date.now() };
   } catch {
     lifecycleCache = { mode: 'live', at: Date.now() };
   }
   return lifecycleCache.mode;
 }
+
 
 async function assertSocialOpen(res) {
   const mode = await resolveLifecycleMode();
@@ -60,19 +72,19 @@ async function syncPostCounters(postId) {
 
 export const getPosts = async (req, res) => {
   try {
-    const { page = 1, limit = 20, discipline, type } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { page, limit, offset } = req.pagination || { page: 1, limit: 20, offset: 0 };
     let query = supabase
       .from('community_posts')
       .select('*, profiles:user_id (full_name)', { count: 'exact' })
       .eq('status', 'published')
       .order('created_at', { ascending: false })
-      .range(offset, offset + parseInt(limit) - 1);
+      .range(offset, offset + limit - 1);
+    const { discipline, type } = req.query;
     if (discipline) query = query.eq('discipline', discipline);
     if (type) query = query.eq('post_type', type);
     const { data, error, count } = await query;
     if (error) throw error;
-    res.json({ success: true, data, pagination: { page: parseInt(page), limit: parseInt(limit), total: count, pages: Math.ceil((count || 0) / parseInt(limit)) } });
+    res.json({ success: true, data, pagination: { page, limit, total: count, pages: Math.ceil((count || 0) / limit) } });
   } catch (err) {
     console.error('Error fetching posts:', err);
     res.status(500).json({ error: 'Failed to retrieve community posts' });
@@ -90,12 +102,18 @@ export const createPost = async (req, res) => {
     if (!POST_TYPES.includes(post_type)) return res.status(400).json({ error: 'Invalid post_type. Use: ' + POST_TYPES.join(', ') });
     if (!DISCIPLINES.includes(discipline)) return res.status(400).json({ error: 'Invalid discipline. Use: ' + DISCIPLINES.join(', ') });
 
-    // Schema stores a single image_url; accept an array for convenience.
-    const image_url = Array.isArray(media_urls) && media_urls.length > 0 ? media_urls[0] : (typeof media_urls === 'string' ? media_urls : null);
+    // §14 multi-image: normalize media_urls to an array of URL strings.
+    const urls = (Array.isArray(media_urls) ? media_urls : (media_urls ? [media_urls] : []))
+      .map(u => typeof u === 'string' ? u.trim() : '')
+      .filter(u => u.length > 0)
+      .slice(0, 8);
+    // Legacy single column keeps the first image; the full set lives in
+    // community_posts.media_urls (migration 018) so no photo is dropped.
+    const image_url = urls[0] || null;
 
     const { data, error } = await supabase
       .from('community_posts')
-      .insert({ user_id, content: content.trim(), post_type, discipline, image_url, status: 'published' })
+      .insert({ user_id, content: content.trim(), post_type, discipline, image_url, media_urls: urls, status: 'published' })
       .select('*, profiles:user_id (full_name)')
       .single();
     if (error) throw error;
@@ -208,17 +226,20 @@ export const reportPost = async (req, res) => {
 
 export const getPostReports = async (req, res) => {
   try {
-    const { status = 'open', page = 1, limit = 50 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    // Admin-only report queue; clamp manually (this route skips the clamp middleware).
+    const { status = 'open' } = req.query;
+    const page = Math.min(Math.max(parseInt(req.query.page) || 1, 1), 10000);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 100);
+    const offset = (page - 1) * limit;
     let query = supabase
       .from('post_reports')
       .select('*, post:post_id (id, status, content, created_at), reporter:reporter_id (full_name)', { count: 'exact' })
       .order('created_at', { ascending: false })
-      .range(offset, offset + parseInt(limit) - 1);
+      .range(offset, offset + limit - 1);
     if (status && status !== 'all') query = query.eq('status', status);
     const { data, error, count } = await query;
     if (error) throw error;
-    res.json({ success: true, data, pagination: { page: parseInt(page), limit: parseInt(limit), total: count, pages: Math.ceil((count || 0) / parseInt(limit)) } });
+    res.json({ success: true, data, pagination: { page, limit, total: count, pages: Math.ceil((count || 0) / limit) } });
   } catch (err) {
     console.error('Error fetching reports:', err);
     res.status(500).json({ error: 'Failed to retrieve reports' });
@@ -262,3 +283,89 @@ export const moderatePost = async (req, res) => {
     res.status(500).json({ error: 'Failed to moderate post' });
   }
 };
+
+/**
+ * §15 Own-Content Delete — Posts
+ * DELETE /api/v1/community/posts/:postId
+ * Allows post author or staff (admin/hq_admin) to delete a post.
+ */
+export const deletePost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const userId = req.user?.id;
+    const isStaff = req.user?.role === 'admin' || req.user?.role === 'hq_admin';
+
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    // Fetch post to check ownership
+    const { data: post, error: fetchErr } = await supabase
+      .from('community_posts')
+      .select('id, user_id')
+      .eq('id', postId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    if (post.user_id !== userId && !isStaff) {
+      return res.status(403).json({ error: 'You can only delete your own posts' });
+    }
+
+    // Delete post (cascade will remove reactions, comments, reports)
+    const { error: delErr } = await supabase
+      .from('community_posts')
+      .delete()
+      .eq('id', postId);
+
+    if (delErr) throw delErr;
+
+    res.json({ success: true, message: 'Post deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting post:', err);
+    res.status(500).json({ error: 'Failed to delete post' });
+  }
+};
+
+/**
+ * §15 Own-Content Delete — Comments
+ * DELETE /api/v1/community/comments/:commentId
+ * Allows comment author or staff to delete a comment.
+ */
+export const deleteComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const userId = req.user?.id;
+    const isStaff = req.user?.role === 'admin' || req.user?.role === 'hq_admin';
+
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    const { data: comment, error: fetchErr } = await supabase
+      .from('post_comments')
+      .select('id, post_id, user_id')
+      .eq('id', commentId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+
+    if (comment.user_id !== userId && !isStaff) {
+      return res.status(403).json({ error: 'You can only delete your own comments' });
+    }
+
+    const { error: delErr } = await supabase
+      .from('post_comments')
+      .delete()
+      .eq('id', commentId);
+
+    if (delErr) throw delErr;
+
+    // Sync counters on the parent post
+    await syncPostCounters(comment.post_id);
+
+    res.json({ success: true, message: 'Comment deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting comment:', err);
+    res.status(500).json({ error: 'Failed to delete comment' });
+  }
+};
+

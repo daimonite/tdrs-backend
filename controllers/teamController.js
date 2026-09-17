@@ -24,21 +24,21 @@ async function uniqueSlug(name) {
 
 export const getTeams = async (req, res) => {
   try {
-    const { page = 1, limit = 20, type } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { page, limit, offset } = req.pagination || { page: 1, limit: 20, offset: 0 };
+    const { type } = req.query;
     let query = supabase
       .from('teams')
       .select('*, captain:captain_id (full_name)', { count: 'exact' })
       .order('member_count', { ascending: false })
       .order('created_at', { ascending: false })
-      .range(offset, offset + parseInt(limit) - 1);
+      .range(offset, offset + limit - 1);
     if (type) {
       if (!TEAM_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid team type. Use: ' + TEAM_TYPES.join(', ') });
       query = query.eq('team_type', type);
     }
     const { data, error, count } = await query;
     if (error) throw error;
-    res.json({ success: true, data, pagination: { page: parseInt(page), limit: parseInt(limit), total: count, pages: Math.ceil((count || 0) / parseInt(limit)) } });
+    res.json({ success: true, data, pagination: { page, limit, total: count, pages: Math.ceil((count || 0) / limit) } });
   } catch (err) {
     console.error('Error fetching teams:', err);
     res.status(500).json({ error: 'Failed to retrieve teams' });
@@ -207,4 +207,130 @@ export const updateTeam = async (req, res) => {
     res.status(500).json({ error: 'Failed to update team' });
   }
 };
+
+/**
+ * §15 Team Discussions / Event Chat
+ * GET /api/v1/teams/:teamId/discussions
+ * Returns discussion messages for a team.
+ */
+export const getTeamDiscussions = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const userId = req.user?.id;
+    const isStaff = req.user?.role === 'admin' || req.user?.role === 'hq_admin';
+
+    // Verify team exists
+    const { data: team, error: teamErr } = await supabase
+      .from('teams')
+      .select('id, name')
+      .eq('id', teamId)
+      .maybeSingle();
+
+    if (teamErr) throw teamErr;
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+
+    // Verify membership (or staff)
+    if (!isStaff && userId) {
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('team_id', teamId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!member) {
+        return res.status(403).json({ error: 'You must be a member of this team to view discussions' });
+      }
+    }
+
+    const tag = `[TEAM:${teamId}]`;
+    const { data: posts, error } = await supabase
+      .from('community_posts')
+      .select('id, user_id, content, created_at, profiles:user_id (full_name)')
+      .eq('post_type', 'team_update')
+      .ilike('content', `${tag}%`)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    const messages = (posts || []).map(p => ({
+      id: p.id,
+      user_id: p.user_id,
+      author: p.profiles?.full_name || 'Team Member',
+      message: p.content.replace(tag, '').trim(),
+      created_at: p.created_at
+    }));
+
+    res.json({
+      success: true,
+      team_id: teamId,
+      team_name: team.name,
+      count: messages.length,
+      data: messages
+    });
+  } catch (err) {
+    console.error('Error fetching team discussions:', err);
+    res.status(500).json({ error: 'Failed to retrieve team discussions' });
+  }
+};
+
+/**
+ * §15 Post Team Discussion Message
+ * POST /api/v1/teams/:teamId/discussions
+ */
+export const postTeamDiscussion = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { message } = req.body;
+    const userId = req.user?.id;
+    const isStaff = req.user?.role === 'admin' || req.user?.role === 'hq_admin';
+
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    if (!message || !message.trim()) return res.status(400).json({ error: 'Message content is required' });
+
+    // Verify membership or staff
+    if (!isStaff) {
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('team_id', teamId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!member) {
+        return res.status(403).json({ error: 'Only team members can post to this team discussion' });
+      }
+    }
+
+    const tag = `[TEAM:${teamId}] `;
+    const { data, error } = await supabase
+      .from('community_posts')
+      .insert({
+        user_id: userId,
+        post_type: 'team_update',
+        discipline: 'triathlon',
+        content: tag + message.trim(),
+        status: 'published'
+      })
+      .select('id, user_id, content, created_at, profiles:user_id (full_name)')
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      success: true,
+      data: {
+        id: data.id,
+        user_id: data.user_id,
+        author: data.profiles?.full_name || 'Team Member',
+        message: message.trim(),
+        created_at: data.created_at
+      }
+    });
+  } catch (err) {
+    console.error('Error posting team discussion:', err);
+    res.status(500).json({ error: 'Failed to post team message' });
+  }
+};
+
 

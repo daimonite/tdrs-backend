@@ -3,16 +3,42 @@
   - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 3.6s
+ ✓ Ready in 9.3s
  ○ Compiling / ...
- ✓ Compiled / in 4.3s (744 modules)
- ✓ Compiled in 487ms (357 modules)
- GET / 200 in 115ms
- GET / 200 in 123ms
- GET / 200 in 102ms
- GET / 200 in 78ms
- GET / 200 in 89ms
- ✓ Compiled in 1634ms (744 modules)
- ✓ Compiled in 233ms (357 modules)
- ✓ Compiled in 390ms (730 modules)
-^C
+ ✓ Compiled / in 11.2s (744 modules)
+ GET / 200 in 11896ms
+ ✓ Compiled in 700ms (357 modules)
+ GET / 200 in 93ms
+ GET / 200 in 80ms
+ ✓ Compiled in 657ms (744 modules)
+ GET / 200 in 251ms
+ ✓ Compiled in 327ms (730 modules)
+ ✓ Compiled in 241ms (730 modules)
+ GET / 200 in 291ms
+ ✓ Compiled in 602ms (730 modules)
+ GET / 200 in 311ms
+ ✓ Compiled in 214ms (357 modules)
+ ✓ Compiled in 322ms (744 modules)
+ GET / 200 in 206ms
+ GET / 200 in 58ms
+ ○ Compiling /merch ...
+ ✓ Compiled /merch in 2.2s (790 modules)
+ GET / 200 in 284ms
+ ✓ Compiled in 569ms (776 modules)
+ ✓ Compiled in 415ms (378 modules)
+ ✓ Compiled in 311ms (378 modules)
+ ✓ Compiled in 246ms (378 modules)
+ ✓ Compiled in 532ms (776 modules)
+ GET / 200 in 294ms
+ ○ Compiling /hq/audit ...
+ ✓ Compiled /hq/audit in 1239ms (826 modules)
+ GET /hq/audit 200 in 1505ms
+ ✓ Compiled /hq/phase in 482ms (828 modules)
+ GET /hq/phase 200 in 604ms
+ ○ Compiling /volunteer/shifts ...
+ ✓ Compiled /volunteer/shifts in 628ms (854 modules)
+ GET /volunteer/shifts 200 in 711ms
+ ✓ Compiled in 1086ms (824 modules)
+ ✓ Compiled in 440ms (398 modules)
+ ✓ Compiled in 130ms (398 modules)
+ GET / 200 in 319ms

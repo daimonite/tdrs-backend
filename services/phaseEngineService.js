@@ -42,6 +42,68 @@ export async function runPhaseEngine() {
       : now < eventDayEnd ? 'event_day'
       : 'post_event';
 
+    // ── Reconcile drift EVERY cycle (audit gap 17/23) ──────────────────────
+    // The original engine only wrote event_config on transitions, so any
+    // manual edit to event_config or event_lifecycle (e.g. someone setting
+    // archive then flipping lifecycle back to live) stayed contradictory
+    // forever: config=archive while lifecycle=live. We now compare the
+    // desired derived phase against BOTH satellite tables each cycle and
+    // correct them in place. event_lifecycle's current_mode is derived from
+    // the phase (live/memory/archive per the 002 mapping); it is only
+    // corrected when it CONTRADICTS the derived phase — an explicit admin
+    // memory/archive override within the pre/post windows is preserved by
+    // only syncing mode when config.phase is the archive/post_event edge.
+    const desiredMode =
+      derivedPhase === 'archive' ? 'archive'
+      : derivedPhase === 'post_event' ? 'memory'
+      : 'live';
+
+    const [configRes, lifecycleRes] = await Promise.all([
+      supabase.from('event_config').select('phase').eq('id', 1).maybeSingle(),
+      supabase.from('event_lifecycle').select('current_mode').limit(1).maybeSingle()
+    ]);
+
+    if (configRes.data && configRes.data.phase !== derivedPhase) {
+      const { error: cfgErr } = await supabase
+        .from('event_config')
+        .update({ phase: derivedPhase, updated_at: new Date().toISOString() })
+        .eq('id', 1);
+      if (cfgErr) {
+        console.error('[Phase Engine] Reconcile event_config failed:', cfgErr.message);
+      } else {
+        console.log(`[Phase Engine] Reconciled event_config.phase ${configRes.data.phase} -> ${derivedPhase}`);
+        await supabase.from('audit_logs').insert([{
+          action: 'PHASE_ENGINE_RECONCILE',
+          target_resource: 'event_config:1',
+          details_json: { from_phase: configRes.data.phase, to_phase: derivedPhase, derived_from: 'event_date' },
+          actor_role: 'system'
+        }]);
+      }
+    }
+
+    // Lifecycle contradicts the derived phase ONLY when it is 'archive' or
+    // 'memory' while the schedule says the event hasn't even happened — a
+    // state the UI treats as no-countdown/no-registration. Live mode is the
+    // default; memory/archive before flag-off are treated as drift.
+    const mode = lifecycleRes.data?.current_mode;
+    if (mode && mode !== desiredMode && mode !== 'live' && derivedPhase === 'pre_event') {
+      const { error: lcErr } = await supabase
+        .from('event_lifecycle')
+        .update({ current_mode: 'live', updated_at: new Date().toISOString() })
+        .neq('current_mode', 'live');
+      if (lcErr) {
+        console.error('[Phase Engine] Reconcile event_lifecycle failed:', lcErr.message);
+      } else {
+        console.log(`[Phase Engine] Reconciled event_lifecycle mode ${mode} -> live (pre_event schedule)`);
+        await supabase.from('audit_logs').insert([{
+          action: 'PHASE_ENGINE_RECONCILE',
+          target_resource: 'event_lifecycle',
+          details_json: { from_mode: mode, to_mode: 'live', reason: 'archive/memory before flag-off is drift' },
+          actor_role: 'system'
+        }]);
+      }
+    }
+
     if (derivedPhase !== edition.current_phase) {
       const { error: updateErr } = await supabase
         .from('event_editions')

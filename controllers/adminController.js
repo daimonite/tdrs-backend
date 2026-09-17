@@ -97,8 +97,8 @@ export const getDashboardOverview = async (req, res) => {
 
 export const updateEventPhase = async (req, res) => {
   try {
-    const { new_phase } = req.body;
-    const validPhases = ['pre_event', 'event_day', 'post_event'];
+    const new_phase = req.body.new_phase || req.body.phase;
+    const validPhases = ['pre_event', 'event_day', 'post_event', 'archive'];
 
     if (!validPhases.includes(new_phase)) {
       return res.status(400).json({

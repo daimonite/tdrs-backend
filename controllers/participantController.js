@@ -15,10 +15,11 @@ import crypto from 'crypto';
 
 export const getParticipantProfile = async (req, res) => {
   try {
+    const userId = req.user.id;
     const { data: profile, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', req.user.id)
+      .eq('id', userId)
       .maybeSingle();
 
     if (error) {
@@ -29,17 +30,66 @@ export const getParticipantProfile = async (req, res) => {
       return res.status(404).json({ error: 'Participant profile not found' });
     }
 
-    // Count participant's registered tickets
-    const { count: ticketCount } = await supabase
-      .from('tickets')
-      .select('id', { count: 'exact', head: true })
-      .eq('profile_id', profile.id);
+    // §5 Digital Home Aggregations:
+    // 1. Registered tickets count
+    // 2. Orders count
+    // 3. Digital bib
+    // 4. Team membership
+    // 5. Challenges joined & completed
+    // 6. Triathlon race results
+    // 7. Community activity counts (posts, comments, stories)
+    const [
+      ticketCountRes,
+      orderCountRes,
+      bibRes,
+      teamMemberRes,
+      challengesRes,
+      resultRes,
+      postsCountRes,
+      storiesCountRes
+    ] = await Promise.all([
+      supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('profile_id', userId),
+      supabase.from('orders').select('id', { count: 'exact', head: true }).or(`profile_id.eq.${userId},user_id.eq.${userId}`),
+      supabase.from('digital_bibs').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('team_members').select('role, joined_at, teams(id, name, slug, team_type, is_relay, logo_url)').eq('user_id', userId).maybeSingle(),
+      supabase.from('user_challenges').select('status, completed_at, progress_value, challenges(id, title, badge_name, badge_icon, discipline)').eq('user_id', userId),
+      supabase.from('triathlon_results').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('community_posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      supabase.from('why_i_participate').select('id', { count: 'exact', head: true }).eq('user_id', userId)
+    ]);
+
+    const userChallenges = challengesRes.data || [];
+    const completedChallenges = userChallenges.filter(c => c.status === 'completed');
 
     return res.status(200).json({
       status: 'success',
       data: {
         ...profile,
-        registered_activities_count: ticketCount || 0
+        registered_activities_count: ticketCountRes.count || 0,
+        orders_count: orderCountRes.count || 0,
+        digital_bib: bibRes.data || null,
+        team: teamMemberRes.data ? {
+          role: teamMemberRes.data.role,
+          joined_at: teamMemberRes.data.joined_at,
+          ...(teamMemberRes.data.teams || {})
+        } : null,
+        challenges: {
+          total_joined: userChallenges.length,
+          completed_count: completedChallenges.length,
+          badges: completedChallenges.map(c => ({
+            challenge_id: c.challenges?.id,
+            challenge_title: c.challenges?.title,
+            badge_name: c.challenges?.badge_name,
+            badge_icon: c.challenges?.badge_icon,
+            discipline: c.challenges?.discipline,
+            completed_at: c.completed_at
+          }))
+        },
+        race_result: resultRes.data || null,
+        activity: {
+          posts_count: postsCountRes.count || 0,
+          stories_count: storiesCountRes.count || 0
+        }
       }
     });
   } catch (error) {

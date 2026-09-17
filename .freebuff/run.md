@@ -131,3 +131,19 @@ table/row is missing (pre-017), so the gate never takes the API down.
   leaderboard?board=bogus 400, triathlon overview + live-activity 200.
   The migration-017 paste must happen in the Supabase SQL editor; after it
   lands, re-run the suite and expect the 500s to become 200/201/401.
+
+NOTE (2026-09-17, preview restart + 4th-phase fix): the registered preview
+died with the previous session; relaunched the frontend with Start-Process
+(node.exe + `next dev -p 3000` directly, no npm wrapper, no cmd — the WMI
+`cmd /c` variant silently failed to launch this time). Backend survived on
+8800 and stayed healthy. The fresh page then crashed with an Unhandled
+Runtime Error in PhaseBanner.tsx: the DB's `event_config.phase` allows a
+FOURTH value `archive` (migration 001 CHECK constraint; brief §17's
+ARCHIVE state) but the frontend only typed three phases, so
+`bannerConfig['archive']` was undefined. Fixed additively across the
+frontend: `EventPhase` type + PHASE_LABELS/PHASE_COLORS + PhaseBanner
+(archive config + safe fallback for any unknown phase) + PhaseContext /
+lib/phase isPostEvent treating archive as post-event + PhaseBadge + HQ
+command page PHASE_META. Typecheck clean; page renders in archive mode
+(memory-remains banner, no countdown). Do not remove the `archive` entry
+from these records when touching phase code.

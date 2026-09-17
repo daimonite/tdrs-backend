@@ -801,6 +801,9 @@ CREATE TABLE IF NOT EXISTS public.triathlon_results (
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_triathlon_results_bib ON public.triathlon_results (bib_number);
+
+
 -- map_waypoints
 CREATE TABLE IF NOT EXISTS public.map_waypoints (
   id              UUID    PRIMARY KEY DEFAULT gen_random_uuid(),

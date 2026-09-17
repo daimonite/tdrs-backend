@@ -34,8 +34,10 @@ import teamRoutes from './routes/teamRoutes.js';
 import challengeRoutes from './routes/challengeRoutes.js';
 import resultsRoutes from './routes/resultsRoutes.js';
 import storiesRoutes from './routes/storiesRoutes.js';
+import consentRoutes from './routes/consentRoutes.js';
 import bibRoutes from './routes/bibRoutes.js';
 import photoRoutes from './routes/photoRoutes.js';
+import researchRoutes from './routes/researchRoutes.js';
 
 // Middleware & Workers
 import errorHandler from './middleware/errorHandler.js';
@@ -131,6 +133,8 @@ app.use('/api/v1/results', resultsRoutes);
 app.use('/api/v1/stories', storiesRoutes);
 app.use('/api/v1/bibs', bibRoutes);
 app.use('/api/v1/photos', photoRoutes);
+app.use('/api/v1/consent', consentRoutes);
+app.use('/api/v1/research', researchRoutes);
 
 // Background Worker: 7-Day Merchandise Reservation & Expiry Auto-Release Engine
 // Runs every 10 minutes in dev / 1 hour in prod

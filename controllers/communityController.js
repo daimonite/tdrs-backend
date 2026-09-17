@@ -83,6 +83,24 @@ export const getPosts = async (req, res) => {
     if (discipline) query = query.eq('discipline', discipline);
     if (type) query = query.eq('post_type', type);
     const { data, error, count } = await query;
+    // PostgREST rejects offsets beyond the row count (PGRST103) — normalize any
+    // out-of-range page to the last valid one instead of 500ing.
+    if (error && error.code === 'PGRST103') {
+      const totalPages = Math.max(Math.ceil((count || 0) / limit), 1);
+      const safePage = Math.min(page, totalPages);
+      const safeOffset = (safePage - 1) * limit;
+      let retryQuery = supabase
+        .from('community_posts')
+        .select('*, profiles:user_id (full_name)', { count: 'exact' })
+        .eq('status', 'published')
+        .order('created_at', { ascending: false })
+        .range(safeOffset, safeOffset + limit - 1);
+      if (discipline) retryQuery = retryQuery.eq('discipline', discipline);
+      if (type) retryQuery = retryQuery.eq('post_type', type);
+      const retry = await retryQuery;
+      res.json({ success: true, data: retry.data || [], pagination: { page: safePage, limit, total: count, pages: Math.ceil((count || 0) / limit) } });
+      return;
+    }
     if (error) throw error;
     res.json({ success: true, data, pagination: { page, limit, total: count, pages: Math.ceil((count || 0) / limit) } });
   } catch (err) {

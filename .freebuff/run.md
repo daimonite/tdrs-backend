@@ -208,3 +208,44 @@ Verification: syntax sweep clean, backend restarted on :8800, all 10 gate-checks
   - Verified live: access lines appear in logs/combined.log; backend restarted on :8800; 22/22 contract tests still pass.
 
 Ops note: logs/ dir is created at first write; add logs/ to .gitignore. Windows note: taskkill //F does NOT exercise SIGTERM handlers (hard kill) — real signal testing needs proper process signals on deploy.
+
+## Admin screens for new backend features (2026-09-17)
+
+Four new HQ pages, wired to the admin-gated backend endpoints via api.ts:
+
+- (hq)/hq/results-import — paste or CSV file upload → POST /results/csv; alias-aware parser documented inline; success/error feedback; sample-format loader.
+- (hq)/hq/challenges — challenge manager: list w/ discipline dots + completion counts, create/edit (dates, badge), end-now, delete.
+- (hq)/hq/waypoints — Dar map waypoint editor: layer filter (swim/bike/run/event), all 8 point types, lat/lng validation, order_index, full CRUD.
+- (hq)/hq/photo-upload — multi-file staging (image-only, 8MB cap), per-photo discipline/checkpoint/bib-lists/photographer tagging, chunked batch upload (3/chunk under the 10mb JSON limit), blob-URL cleanup.
+
+Also:
+- api.ts apiFetch now auto-attaches the Supabase session token when none is passed — all admin endpoints work without threading tokens through pages.
+- Sidebar: new "Race Day" nav group (Results Import, Challenges, Dar Map, Photo Upload) with lucide icons.
+- Challenge interface widened with start_date/end_date/is_open; ingestResultsCsv typed to the backend's { message } shape.
+
+Verified: tsc --noEmit clean; all four routes 200 in the running preview; nav group renders.
+
+## Migration 018 APPLIED (2026-09-17 14:51 UTC)
+
+Applied via manual paste (first attempt failed on a misplaced quote before ::jsonb in the
+final audit-row insert — fixed in-file, then the full idempotent script re-ran clean).
+
+Verified live afterwards:
+- community_posts.media_urls exists (TEXT[] NOT NULL DEFAULT '{}') — multi-image posts active
+- registrations unique constraint present; existing dupes already status='cancelled'
+- RLS: anon key returns [] on digital_bibs (was full dump), community_posts still 200 public
+- event_lifecycle: archive_date + memory_mode_unlocked_at now NULL (contradiction resolved)
+- audit_logs has MIGRATION_018_APPLIED row; schema_migrations ledger updated manually
+  (018_audit_fixes.sql, applied_by=manual-sql-editor) so `npm run migrate` won't re-run it
+
+Remaining external steps (unchanged): 5 API keys (PayMe/Textify/Resend/Strava/Polygon).
+
+## Checklist verification pass (Schedule A audit)
+Ran `verify_checklist.mjs` (11 sections) + a 30-check probe of everything the checklist flagged ❌/⚠️. Found and fixed 5 real backend bugs:
+1. `collectibleController` — invalid PostgREST alias syntax (`col AS alias`) and a `tickets→activities` embed with no FK; both 500'd. Fixed: plain columns + second-query lookup. Also fixed the same no-FK bug in `issueCollectible` (it could NEVER issue a collectible).
+2. `adminController.exportRegistrationsCsv` — same tickets→activities embed 500. Fixed with second-query lookup. `toCsv` now emits a header row even for zero rows.
+3. `communityController.getPosts` — page beyond row count → PGRST103 → 500. Now normalizes to the last valid page.
+4. `participantController.confirmMerchandisePickup` — unknown order → 500. Now 404.
+
+Final state: checklist 11/11 PASS, probe 30/30 PASS, contract tests 22/22, moderation resolution verified end-to-end (report→hide→403 for non-staff), comms endpoints live at `/communications/templates` + `/communications/logs`, dashboard at `/admin/dashboard/overview`, moderation queue at `/community/reports`.
+Still external: real PayMe/Textify/Resend/Polygon credentials; certificate PDF generation (no library); on-chain minting (schema only, deferred); Strava (Schedule A11).

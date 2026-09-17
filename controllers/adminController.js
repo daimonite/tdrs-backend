@@ -837,8 +837,11 @@ export const updateIncidentStatus = async (req, res) => {
 // CSV EXPORTS (M&E and reporting — proposal journey N/103)
 // ==============================================================================
 
-const toCsv = (rows) => {
-  if (!rows || rows.length === 0) return '';
+const toCsv = (rows, fallbackHeaders = null) => {
+  if (!rows || rows.length === 0) {
+    // Emit a header-only CSV so an empty export is still a valid, openable file.
+    return fallbackHeaders ? fallbackHeaders.join(',') : '';
+  }
   const headers = Object.keys(rows[0]);
   const escape = (v) => {
     if (v === null || v === undefined) return '';
@@ -853,11 +856,23 @@ export const exportRegistrationsCsv = async (req, res) => {
     const { data, error } = await supabase
       .from('tickets')
       // tickets has two FKs to profiles (profile_id + checked_in_by): disambiguate.
-      .select('bib_number, checked_in, checked_in_at, created_at, profiles:profile_id(full_name, email, phone_number), activities(title, category)')
+      // NOTE: tickets.activity_id has NO FK constraint to activities, so a PostgREST
+      // embed would fail with PGRST200. Resolve activity titles in a second query.
+      .select('bib_number, checked_in, checked_in_at, created_at, profiles:profile_id(full_name, email, phone_number)')
       .order('created_at', { ascending: false });
 
     if (error) {
       return res.status(500).json({ error: error.message });
+    }
+
+    const activityIds = [...new Set((data || []).map(t => t.activity_id).filter(Boolean))];
+    let activitiesById = {};
+    if (activityIds.length) {
+      const { data: acts } = await supabase
+        .from('activities')
+        .select('id, title, category')
+        .in('id', activityIds);
+      activitiesById = Object.fromEntries((acts || []).map(a => [a.id, a]));
     }
 
     const rows = (data || []).map(t => ({
@@ -865,8 +880,8 @@ export const exportRegistrationsCsv = async (req, res) => {
       participant: t.profiles?.full_name,
       email: t.profiles?.email,
       phone: t.profiles?.phone_number,
-      activity: t.activities?.title,
-      category: t.activities?.category,
+      activity: activitiesById[t.activity_id]?.title || '',
+      category: activitiesById[t.activity_id]?.category || '',
       checked_in: t.checked_in,
       checked_in_at: t.checked_in_at,
       registered_at: t.created_at
@@ -874,7 +889,7 @@ export const exportRegistrationsCsv = async (req, res) => {
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="registrations.csv"');
-    return res.status(200).send(toCsv(rows));
+    return res.status(200).send(toCsv(rows, ['bib_number', 'participant', 'email', 'phone', 'activity', 'category', 'checked_in', 'checked_in_at', 'registered_at']));
   } catch (error) {
     console.error('exportRegistrationsCsv exception:', error);
     return res.status(500).json({ error: 'Failed to export registrations' });

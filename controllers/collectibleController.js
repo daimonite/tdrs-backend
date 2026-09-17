@@ -36,14 +36,14 @@ export const getMyCollectible = async (req, res) => {
         id,
         serial_number,
         tier,
-        finish_time_seconds AS finish_time,
+        finish_time_seconds,
         public_verification_hash,
         certificate_pdf_url,
         on_chain_network,
         on_chain_tx_hash,
         issued_at,
-        profiles (full_name),
-        activities (title, category, distance_km)
+        profiles ( full_name ),
+        activities ( title, category, distance_km )
       `)
       .eq('profile_id', profile.id);
 
@@ -132,9 +132,11 @@ export const issueCollectible = async (req, res) => {
       return res.status(404).json({ error: 'Participant not found' });
     }
 
+    // tickets.activity_id has NO FK to activities — embed would fail (PGRST200).
+    // Fetch the ticket, then resolve the edition in a second query.
     const { data: ticket, error: ticketErr } = await supabase
       .from('tickets')
-      .select('activity_id, activities(edition_id)')
+      .select('activity_id')
       .eq('profile_id', profile.id)
       .eq('checked_in', true)
       .limit(1)
@@ -147,6 +149,16 @@ export const issueCollectible = async (req, res) => {
       return res.status(400).json({ error: 'This participant has no checked-in ticket — cannot issue a finisher collectible' });
     }
 
+    let editionId = null;
+    if (ticket.activity_id) {
+      const { data: act } = await supabase
+        .from('activities')
+        .select('edition_id')
+        .eq('id', ticket.activity_id)
+        .maybeSingle();
+      editionId = act?.edition_id || null;
+    }
+
     const serialNumber = `TDR2026-${badgeId.toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`;
     const verificationHash = crypto.randomBytes(16).toString('hex');
 
@@ -154,7 +166,7 @@ export const issueCollectible = async (req, res) => {
       .from('digital_collectibles')
       .insert([{
         profile_id: profile.id,
-        edition_id: ticket.activities?.edition_id,
+        edition_id: editionId,
         activity_id: ticket.activity_id,
         serial_number: serialNumber,
         tier: badgeId,
@@ -186,14 +198,14 @@ export const verifyCertificateByHash = async (req, res) => {
         id,
         serial_number,
         tier,
-        finish_time_seconds AS finish_time,
+        finish_time_seconds,
         public_verification_hash,
         certificate_pdf_url,
         on_chain_network,
         on_chain_tx_hash,
         issued_at,
-        profiles (full_name),
-        activities (title, distance_km)
+        profiles ( full_name ),
+        activities ( title, distance_km )
       `)
       .eq('public_verification_hash', hash)
       .maybeSingle();
@@ -219,7 +231,7 @@ export const verifyCertificateByHash = async (req, res) => {
         id: collectible.id,
         serial_number: collectible.serial_number,
         tier: collectible.tier,
-        finish_time: collectible.finish_time,
+        finish_time: collectible.finish_time_seconds,
         public_verification_hash: collectible.public_verification_hash,
         certificate_pdf_url: collectible.certificate_pdf_url,
         on_chain_network: collectible.on_chain_network,

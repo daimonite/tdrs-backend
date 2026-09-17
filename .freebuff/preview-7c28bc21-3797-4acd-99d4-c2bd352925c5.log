@@ -63,3 +63,17 @@
  ✓ Compiled /register in 1062ms (881 modules)
  ✓ Compiled in 718ms (867 modules)
  ✓ Compiled in 521ms (439 modules)
+ ○ Compiling /hq/results-import ...
+ ✓ Compiled /hq/results-import in 894ms (889 modules)
+ GET /hq/results-import 200 in 1248ms
+ ○ Compiling /hq/challenges ...
+ ✓ Compiled /hq/challenges in 538ms (895 modules)
+ GET /hq/challenges 200 in 745ms
+ ○ Compiling /hq/waypoints ...
+ ✓ Compiled /hq/waypoints in 629ms (901 modules)
+ GET /hq/waypoints 200 in 762ms
+ ✓ Compiled /hq/photo-upload in 474ms (907 modules)
+ GET /hq/photo-upload 200 in 557ms
+ ○ Compiling /hq/command ...
+ ✓ Compiled /hq/command in 1203ms (924 modules)
+ GET /hq/command 200 in 1407ms

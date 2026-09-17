@@ -367,10 +367,14 @@ export const confirmMerchandisePickup = async (req, res) => {
       })
       .or(`id.eq.${order_id},order_number.eq.${order_id}`)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       return res.status(500).json({ error: error.message });
+    }
+
+    if (!updated) {
+      return res.status(404).json({ error: `Order not found: ${order_id}` });
     }
 
     return res.status(200).json({

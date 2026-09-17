@@ -88,7 +88,9 @@ WHERE current_mode = 'live'
   AND (archive_date IS NOT NULL OR memory_mode_unlocked_at IS NOT NULL);
 
 -- Audit note row for the migration itself.
+-- (Quote fix: the closing quote must come BEFORE ::jsonb — previously it sat
+-- after the cast, putting '::jsonb' inside the string and failing to parse.)
 INSERT INTO public.audit_logs (action, target_resource, details_json, actor_role)
 VALUES ('MIGRATION_018_APPLIED', 'migrations:018',
-  '{"changes": ["media_urls column", "registrations unique", "RLS tightening", "consent owner-only read", "stale lifecycle metadata cleanup"]}::jsonb',
+  '{"changes": ["media_urls column", "registrations unique", "RLS tightening", "consent owner-only read", "stale lifecycle metadata cleanup"]}'::jsonb,
   'system');

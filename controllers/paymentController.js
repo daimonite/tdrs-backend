@@ -279,6 +279,33 @@ export const handlePayMeWebhook = async (req, res) => {
           if (ticket) {
             issuedTickets.push(ticket);
 
+            // §6 Digital Bib — auto-issue the participant's shareable digital
+            // identity the moment their ticket exists (audit gap 2). Failures
+            // are logged, never blocking payment confirmation. The athlete's
+            // name is resolved here (the fullName lookup happens later in the
+            // flow) so the bib is complete at issue time.
+            try {
+              let athleteName = 'Athlete';
+              if (order.profile_id) {
+                const { data: bibProfile } = await supabase
+                  .from('profiles')
+                  .select('full_name')
+                  .eq('id', order.profile_id)
+                  .maybeSingle();
+                athleteName = bibProfile?.full_name || 'Athlete';
+              }
+              const { autoIssueBibForUser } = await import('./bibController.js');
+              const issued = await autoIssueBibForUser({
+                userId: order.profile_id,
+                bibNumber: ticket.bib_number,
+                athleteName,
+                categoryName: category
+              });
+              if (!issued) console.warn('[PayMe Webhook] Bib auto-issue returned null for user', order.profile_id);
+            } catch (bibErr) {
+              console.error('[PayMe Webhook] Bib auto-issue failed:', bibErr.message);
+            }
+
             // Increment registered_count on activity
             if (act) {
               await supabase

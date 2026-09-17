@@ -1,4 +1,5 @@
 import supabase from '../config/supabase.js';
+import { darToday, darDateOffset } from '../utils/darTime.js';
 
 // Schema: migration 017 `challenges` / `user_challenges`.
 // - challenges: discipline (swim|bike|run|community|general), start_date/end_date
@@ -12,7 +13,7 @@ export const getChallenges = async (req, res) => {
   try {
     const user_id = req.user?.id;
     const { include_past = 'false', discipline } = req.query;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = darToday();
 
     let query = supabase
       .from('challenges')
@@ -61,7 +62,7 @@ export const joinChallenge = async (req, res) => {
     const { data: challenge } = await supabase
       .from('challenges').select('id, title, end_date').eq('id', challengeId).maybeSingle();
     if (!challenge) return res.status(404).json({ error: 'Challenge not found' });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = darToday();
     if (today > challenge.end_date) return res.status(409).json({ error: 'This challenge has already ended' });
 
     const { data, error } = await supabase
@@ -147,8 +148,8 @@ export const createChallenge = async (req, res) => {
       return res.status(400).json({ error: 'Invalid discipline. Allowed: ' + DISCIPLINES.join(', ') });
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const in30Days = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const today = darToday();
+    const in30Days = darDateOffset(30);
 
     const { data, error } = await supabase
       .from('challenges')
@@ -243,7 +244,7 @@ export const deleteChallenge = async (req, res) => {
 export const endChallenge = async (req, res) => {
   try {
     const { challengeId } = req.params;
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const yesterday = darDateOffset(-1);
 
     const { data, error } = await supabase
       .from('challenges')

@@ -1,8 +1,8 @@
+{"level":"info","message":"Backend API running on port 8800 — health at /api/v1/health","timestamp":"2026-09-17T14:06:57.189Z"}
+{"level":"info","message":"http 200 GET /api/v1/community/posts?limit=1 411 - 412.850 ms - 127.0.0.1","timestamp":"2026-09-17T14:07:43.432Z"}
+{"level":"info","message":"http 200 GET /api/v1/triathlon/overview 4006 - 720.730 ms - 127.0.0.1","timestamp":"2026-09-17T14:07:44.447Z"}
+{"level":"info","message":"http 200 GET /api/v1/results/leaderboard?board=performance 696 - 440.835 ms - 127.0.0.1","timestamp":"2026-09-17T14:07:45.171Z"}
 {"level":"info","message":"Backend API running on port 8800 — health at /api/v1/health","timestamp":"2026-09-17T14:08:21.419Z"}
-=======================================================
-🚲 TOUR DE ROTARY DSM 2026 BACKEND API RUNNING ON PORT 8800
-📡 Health Check: http://localhost:8800/api/v1/health
-=======================================================
 {"level":"warn","message":"http 401 POST /api/v1/community/posts 29 - 27.437 ms - 127.0.0.1","timestamp":"2026-09-17T14:09:20.459Z"}
 {"level":"info","message":"http 200 GET /api/v1/community/posts?limit=10000 1557 - 637.844 ms - 127.0.0.1","timestamp":"2026-09-17T14:09:21.128Z"}
 {"level":"info","message":"http 200 GET /api/v1/community/posts 1556 - 302.461 ms - 127.0.0.1","timestamp":"2026-09-17T14:09:21.435Z"}
@@ -16,5 +16,3 @@
 {"level":"info","message":"http 200 GET /api/v1/triathlon/impact 1053 - 393.925 ms - 127.0.0.1","timestamp":"2026-09-17T14:09:25.424Z"}
 {"level":"info","message":"http 200 GET /api/v1/community/posts 1556 - 393.380 ms - 127.0.0.1","timestamp":"2026-09-17T14:09:25.829Z"}
 {"level":"warn","message":"http 401 POST /api/v1/community/posts 36 - 398.859 ms - 127.0.0.1","timestamp":"2026-09-17T14:09:27.774Z"}
-[Reservation Worker] ⏳ Checking stock reservations & reminders in Supabase...
-[Reservation Worker] ⏳ Checking stock reservations & reminders in Supabase...

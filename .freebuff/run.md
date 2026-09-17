@@ -147,3 +147,64 @@ lib/phase isPostEvent treating archive as post-event + PhaseBadge + HQ
 command page PHASE_META. Typecheck clean; page renders in archive mode
 (memory-remains banner, no countdown). Do not remove the `archive` entry
 from these records when touching phase code.
+
+## Audit gaps 11–20 FIXED (2026-09-17)
+
+Backend changes (running, verified live):
+- `middleware/apiHygiene.js` — NEW: `clampPagination` (limit capped at 100) + `readLimiter`/`writeLimiter`/`mutationLimiter`. Wired into community, teams, challenges, stories, photos, results, triathlon routes. `req.pagination` is consumed by getPosts/getTeams/getStories/getPhotos/getResults (getPostReports clamps inline).
+- `controllers/consentController.js` + `routes/consentRoutes.js` — NEW consent API (§18): GET/PUT/DELETE `/api/v1/consent` (self-service), GET `/consent/summary` (admin, aggregated). Mounted in index.js.
+- `controllers/eventContentController.js` — NEW: waypoint CRUD (`POST/PATCH/DELETE /triathlon/waypoints`) and category+wave admin (`POST/PATCH /triathlon/categories`) — gaps 12 & 13.
+- `communityController.createPost` — persists full `media_urls` array (needs migration 018's column; falls back gracefully until applied: insert will error on missing column ONLY after 018? No — insert includes media_urls key; Supabase REST ignores unknown columns? NO, it rejects. NOTE: run migration 018 BEFORE deploying this — on the current DB, posts with media_urls in the payload fail. The field is always sent; if 018 is not yet applied, create posts will 500. So APPLY 018 FIRST.)
+- `services/phaseEngineService.js` — reconciles `event_config.phase` AND `event_lifecycle.current_mode` every 60s cycle against the derived phase; heals manual drift (gap 17/23); audit-logs corrections.
+- `migrations/018_audit_fixes.sql` — NEW: `media_urls` TEXT[] column, UNIQUE(user_id, activity_slug) on registrations (dedupes pending dups first), RLS tightening (bibs denied to anon, results/bibs pinned, stories approved-only, user_challenges owner-read, consent owner-read). **MUST be pasted in Supabase SQL Editor** — the feed write path and the RLS fixes activate only when it lands.
+
+Frontend changes:
+- `(hq)/layout.tsx` — staff-only gate (admin/hq_admin) redirecting others to `/login?next=/hq` (gap 16).
+- `lib/supabase/queries/admin.ts` — updateSponsorStatus/updatePartnerStatus/updateProductStock now write audit rows (gap 18); type-check passes.
+
+Tests/CI (gap 20):
+- `tests/contract.test.js` — 22 tests, ALL PASSING against localhost:8800.
+- `.github/workflows/ci.yml` — backend syntax sweep + contract tests; frontend typecheck + build.
+
+Verification: 12/12 curl checks pass (clamps return limit:100, RateLimit-Policy headers present, 401s clean, bogus team type 400, consent gated). Phase engine reconcile proven by isolated run; DB now consistent (config=pre_event, lifecycle=live).
+
+## Audit gaps 23-29 FIXED (2026-09-17)
+
+- Gap 23 (reconcile): confirmed live from the 11-20 session — engine now reconciles config/lifecycle every cycle. DB verified consistent (config=pre_event, lifecycle=live).
+- Gap 24 (ARCHIVE reachable): phase engine derives `archive` after `config_json.archive_after_days` (default 30) post-event days; event_editions caps at post_event (its CHECK has no archive), config/lifecycle go to archive. Engine advances lifecycle live->archive itself.
+- Gap 28 (stale metadata): engine clears contradictory archive_date/memory_mode_unlocked_at when mode is live (found live in DB from the 11:13 incident — now NULL), and migration 018 section 5 cleans it SQL-side too. Bug found during fix: the engine read only selected current_mode, so metadata drift was invisible; select widened.
+- Gap 25 (UTC-day bug): NEW utils/darTime.js — darToday()/darDateOffset() via Intl with Africa/Dar_es_Salaam; challengeController's four `toISOString().slice(0,10)` comparisons replaced (list/join/create/end).
+- Gap 26 (duplicate registrations): createRegistration (frontend) now checks for an existing non-cancelled registration first and returns it with existing:true; register page handles both paths. DB UNIQUE arrives with migration 018.
+- Gap 27 (env hygiene): .env.local UNTRACKED from frontend repo (git rm --cached; no secret was in it — only NEXT_PUBLIC_* values); NEW frontend .gitignore (env files, .next, tsbuildinfo).
+- Gap 29 (migration ledger): NEW migrations/000_ledger.sql (exec_sql RPC + schema_migrations table; apply ONCE manually), NEW scripts/migrate.js runner (npm run migrate / migrate:status; refuses 000_ledger with instructions; records success/failure per file), wired into package.json.
+
+Verification: syntax sweep OK; backend restarted (PID changes each restart — check netstat :8800); 22/22 contract tests pass; tsc --noEmit clean; frontend 200; engine runs clean and cleared the stale archive_date (verified in DB).
+
+Ops note: migrations/000_ledger.sql needs ONE manual paste in Supabase SQL editor; after that `npm run migrate` applies 018 (and everything after) automatically.
+
+## Audit gaps 1-10 — verified + closed (2026-09-17)
+
+Most of 1-10 were built in a prior session; this round VERIFIED each end-to-end and closed the one real hole:
+
+- Gap 1 (results ingest): ingestResults + ingestResultsCsv + updateResult + deleteResult exist, admin-gated, CSV parser handles header aliases + time formats + dedupe. VERIFIED: routes mounted, 401 without token.
+- Gap 2 (bib auto-issue): lazy-issue existed in GET /bibs/me; the REAL gap was that the PayMe webhook minted tickets without creating digital_bibs rows. FIXED: webhook now calls autoIssueBibForUser right after each ticket insert (fails soft — never blocks payment). Bib now exists the moment payment lands.
+- Gap 3 (challenge CRUD): create/update/delete/endChallenge all exist, admin-gated, routes mounted. VERIFIED.
+- Gap 4 (photo upload): uploadPhoto/batchUploadPhotos/deletePhoto exist w/ Supabase Storage base64 path + admin/volunteer gating. VERIFIED.
+- Gap 5 (discipline leaderboards): performance/swim/bike/run/community/participation boards all live (200 on each). VERIFIED.
+- Gap 6 (aggregate profile): getParticipantProfile already aggregates tickets, orders, digital bib, team, challenges+badges, race result, post/story counts in one call. VERIFIED.
+- Gap 7 (own-content delete): deletePost/deleteComment author-or-staff logic, routes mounted. VERIFIED 401-gated.
+- Gap 8 (consent API): consentController + routes from the 11-20 round. VERIFIED.
+- Gap 9 (team discussions): getTeamDiscussions/postTeamDiscussion mounted. VERIFIED.
+- Gap 10 (phase reconcile): phaseEngineService reconciles every 60s cycle. VERIFIED in 23-29 round.
+
+Verification: syntax sweep clean, backend restarted on :8800, all 10 gate-checks return correct 401/200, 22/22 contract tests pass, frontend typecheck clean.
+
+## Gaps 21-22 CLOSED (2026-09-17)
+
+- Gap 21 (health check): /api/v1/health now pings the DB for real (head-count on event_config) and reports { status: healthy|degraded, checks.database: {status, latency_ms} } — returns 503 when the DB is unreachable so monitoring actually catches outages. Verified live: database up, 726ms latency reported.
+- Gap 22 (logging + shutdown):
+  - morgan@1.10.1 installed; services/loggingService.js exports morganMiddleware — every request is written through winston as structured JSON to logs/combined.log + logs/error.log (>=400 warn, >=500 error), with health/OPTIONS skipped.
+  - Graceful shutdown: all three background worker intervals registered in workerIntervals and cleared on shutdown; server.close() drains in-flight requests with a 10s force-exit timeout; SIGTERM + SIGINT handlers wired (idempotent).
+  - Verified live: access lines appear in logs/combined.log; backend restarted on :8800; 22/22 contract tests still pass.
+
+Ops note: logs/ dir is created at first write; add logs/ to .gitignore. Windows note: taskkill //F does NOT exercise SIGTERM handlers (hard kill) — real signal testing needs proper process signals on deploy.

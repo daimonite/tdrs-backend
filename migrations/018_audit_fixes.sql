@@ -76,9 +76,19 @@ CREATE POLICY "Owner read research_consents" ON public.research_consents
   FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
 
+-- ── 5. GAP 28: resolve the archive/live contradiction (2026-09-17 incident) ─
+-- The lifecycle row was left with archive_date stamped while mode='live'.
+-- The phase engine (services/phaseEngineService.js) now heals this itself on
+-- its next cycle after this migration, but clean it here too so the data is
+-- never contradictory even between migration and first engine run.
+UPDATE public.event_lifecycle
+SET archive_date = NULL,
+    memory_mode_unlocked_at = NULL
+WHERE current_mode = 'live'
+  AND (archive_date IS NOT NULL OR memory_mode_unlocked_at IS NOT NULL);
+
 -- Audit note row for the migration itself.
 INSERT INTO public.audit_logs (action, target_resource, details_json, actor_role)
 VALUES ('MIGRATION_018_APPLIED', 'migrations:018',
-  '{"changes": ["media_urls column", "registrations unique", "RLS tightening", "consent owner-only read"]}::jsonb',
-  'system')
-WHERE EXISTS (SELECT 1 FROM public.audit_logs LIMIT 1);
+  '{"changes": ["media_urls column", "registrations unique", "RLS tightening", "consent owner-only read", "stale lifecycle metadata cleanup"]}::jsonb',
+  'system');

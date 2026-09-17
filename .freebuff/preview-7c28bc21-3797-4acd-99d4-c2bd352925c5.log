@@ -42,3 +42,24 @@
  ✓ Compiled in 440ms (398 modules)
  ✓ Compiled in 130ms (398 modules)
  GET / 200 in 319ms
+ ○ Compiling /hq/phase ...
+ ✓ Compiled /hq/phase in 714ms (849 modules)
+ GET /hq/phase 200 in 889ms
+ ✓ Compiled in 1296ms (825 modules)
+ ✓ Compiled in 406ms (413 modules)
+ GET / 200 in 440ms
+ ✓ Compiled in 1330ms (825 modules)
+ ✓ Compiled in 733ms (811 modules)
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1293ms (838 modules)
+ ✓ Compiled /ticket in 479ms (844 modules)
+ ✓ Compiled in 591ms (844 modules)
+ ✓ Compiled in 1643ms (858 modules)
+ ✓ Compiled in 882ms (858 modules)
+ ✓ Compiled in 1046ms (858 modules)
+ ✓ Compiled in 1145ms (858 modules)
+ ✓ Compiled in 984ms (430 modules)
+ ○ Compiling /register ...
+ ✓ Compiled /register in 1062ms (881 modules)
+ ✓ Compiled in 718ms (867 modules)
+ ✓ Compiled in 521ms (439 modules)

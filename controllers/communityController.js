@@ -111,9 +111,25 @@ export const createPost = async (req, res) => {
     // community_posts.media_urls (migration 018) so no photo is dropped.
     const image_url = urls[0] || null;
 
+    // Build the insert payload once; media_urls is only included when the
+    // column exists (migration 018 applied). On pre-018 databases a test
+    // insert with the key fails with PGRST204, we retry without it, and
+    // remember the result for the life of the process.
+    let supportsMediaUrls = createPost._supportsMediaUrls;
+    if (supportsMediaUrls === undefined) {
+      const { error: probeErr } = await supabase
+        .from('community_posts')
+        .insert({ user_id, content: 'media_column_probe__ignored', status: 'hidden', media_urls: [] });
+      // PGRST204 = "Could not find the 'media_urls' column of community_posts"
+      createPost._supportsMediaUrls = supportsMediaUrls = !(probeErr?.code === 'PGRST204');
+    }
+
+    const payload = { user_id, content: content.trim(), post_type, discipline, image_url, status: 'published' };
+    if (supportsMediaUrls) payload.media_urls = urls;
+
     const { data, error } = await supabase
       .from('community_posts')
-      .insert({ user_id, content: content.trim(), post_type, discipline, image_url, media_urls: urls, status: 'published' })
+      .insert(payload)
       .select('*, profiles:user_id (full_name)')
       .single();
     if (error) throw error;

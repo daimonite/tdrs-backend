@@ -3,77 +3,21 @@
   - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 9.3s
+ ✓ Ready in 8.3s
  ○ Compiling / ...
- ✓ Compiled / in 11.2s (744 modules)
- GET / 200 in 11896ms
- ✓ Compiled in 700ms (357 modules)
- GET / 200 in 93ms
- GET / 200 in 80ms
- ✓ Compiled in 657ms (744 modules)
- GET / 200 in 251ms
- ✓ Compiled in 327ms (730 modules)
- ✓ Compiled in 241ms (730 modules)
- GET / 200 in 291ms
- ✓ Compiled in 602ms (730 modules)
- GET / 200 in 311ms
- ✓ Compiled in 214ms (357 modules)
- ✓ Compiled in 322ms (744 modules)
- GET / 200 in 206ms
- GET / 200 in 58ms
- ○ Compiling /merch ...
- ✓ Compiled /merch in 2.2s (790 modules)
- GET / 200 in 284ms
- ✓ Compiled in 569ms (776 modules)
- ✓ Compiled in 415ms (378 modules)
- ✓ Compiled in 311ms (378 modules)
- ✓ Compiled in 246ms (378 modules)
- ✓ Compiled in 532ms (776 modules)
- GET / 200 in 294ms
- ○ Compiling /hq/audit ...
- ✓ Compiled /hq/audit in 1239ms (826 modules)
- GET /hq/audit 200 in 1505ms
- ✓ Compiled /hq/phase in 482ms (828 modules)
- GET /hq/phase 200 in 604ms
- ○ Compiling /volunteer/shifts ...
- ✓ Compiled /volunteer/shifts in 628ms (854 modules)
- GET /volunteer/shifts 200 in 711ms
- ✓ Compiled in 1086ms (824 modules)
- ✓ Compiled in 440ms (398 modules)
- ✓ Compiled in 130ms (398 modules)
- GET / 200 in 319ms
- ○ Compiling /hq/phase ...
- ✓ Compiled /hq/phase in 714ms (849 modules)
- GET /hq/phase 200 in 889ms
- ✓ Compiled in 1296ms (825 modules)
- ✓ Compiled in 406ms (413 modules)
- GET / 200 in 440ms
- ✓ Compiled in 1330ms (825 modules)
- ✓ Compiled in 733ms (811 modules)
- ○ Compiling /dashboard ...
- ✓ Compiled /dashboard in 1293ms (838 modules)
- ✓ Compiled /ticket in 479ms (844 modules)
- ✓ Compiled in 591ms (844 modules)
- ✓ Compiled in 1643ms (858 modules)
- ✓ Compiled in 882ms (858 modules)
- ✓ Compiled in 1046ms (858 modules)
- ✓ Compiled in 1145ms (858 modules)
- ✓ Compiled in 984ms (430 modules)
- ○ Compiling /register ...
- ✓ Compiled /register in 1062ms (881 modules)
- ✓ Compiled in 718ms (867 modules)
- ✓ Compiled in 521ms (439 modules)
- ○ Compiling /hq/results-import ...
- ✓ Compiled /hq/results-import in 894ms (889 modules)
- GET /hq/results-import 200 in 1248ms
- ○ Compiling /hq/challenges ...
- ✓ Compiled /hq/challenges in 538ms (895 modules)
- GET /hq/challenges 200 in 745ms
- ○ Compiling /hq/waypoints ...
- ✓ Compiled /hq/waypoints in 629ms (901 modules)
- GET /hq/waypoints 200 in 762ms
- ✓ Compiled /hq/photo-upload in 474ms (907 modules)
- GET /hq/photo-upload 200 in 557ms
+ ✓ Compiled / in 10.7s (744 modules)
+ GET / 200 in 11328ms
+ ✓ Compiled in 680ms (357 modules)
+ GET / 200 in 71ms
+ GET / 200 in 86ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 973ms (755 modules)
  ○ Compiling /hq/command ...
- ✓ Compiled /hq/command in 1203ms (924 modules)
- GET /hq/command 200 in 1407ms
+ ✓ Compiled /hq/command in 670ms (816 modules)
+ ✓ Compiled /hq/reports in 252ms (824 modules)
+ ✓ Compiled /hq/registrations in 346ms (842 modules)
+ ✓ Compiled /hq/partners in 332ms (850 modules)
+ ✓ Compiled /hq/orders in 300ms (794 modules)
+ ✓ Compiled /hq/inventory in 289ms (786 modules)
+ ✓ Compiled /hq/collectibles in 419ms (784 modules)
+ ✓ Compiled /hq/command in 106ms (391 modules)

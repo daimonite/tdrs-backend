@@ -173,3 +173,4 @@
 {"level":"info","message":"http 200 GET /api/v1/triathlon/impact 1053 - 389.888 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:04.450Z"}
 {"level":"info","message":"http 200 GET /api/v1/community/posts 1620 - 339.988 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:04.821Z"}
 {"level":"warn","message":"http 401 POST /api/v1/community/posts 36 - 391.883 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:07.113Z"}
+{"level":"info","message":"Backend API running on port 8800 — health at /api/v1/health","timestamp":"2026-09-18T05:45:35.886Z"}

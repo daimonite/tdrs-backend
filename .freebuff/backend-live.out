@@ -1,23 +1,8 @@
-{"level":"info","message":"Backend API running on port 8800 — health at /api/v1/health","timestamp":"2026-09-17T15:29:02.462Z"}
+{"level":"info","message":"Backend API running on port 8800 — health at /api/v1/health","timestamp":"2026-09-18T05:45:35.886Z"}
 =======================================================
 🚲 TOUR DE ROTARY DSM 2026 BACKEND API RUNNING ON PORT 8800
 📡 Health Check: http://localhost:8800/api/v1/health
 =======================================================
-{"level":"warn","message":"http 400 POST /api/v1/collectibles/issue 93 - 2587.740 ms - 127.0.0.1","timestamp":"2026-09-17T15:29:36.289Z"}
-{"level":"info","message":"http 200 GET /api/v1/collectibles/my-certificate 98 - 1375.281 ms - 127.0.0.1","timestamp":"2026-09-17T15:29:38.030Z"}
-{"level":"warn","message":"http 401 POST /api/v1/community/posts 29 - 3.798 ms - 127.0.0.1","timestamp":"2026-09-17T15:29:58.878Z"}
-{"level":"info","message":"http 200 GET /api/v1/community/posts?limit=10000 1621 - 922.596 ms - 127.0.0.1","timestamp":"2026-09-17T15:29:59.846Z"}
-{"level":"info","message":"http 200 GET /api/v1/community/posts 1620 - 480.673 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:00.339Z"}
-{"level":"warn","message":"http 400 GET /api/v1/results/leaderboard?board=cheating 103 - 1.181 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:00.908Z"}
-{"level":"info","message":"http 200 GET /api/v1/results/leaderboard?board=performance 696 - 362.824 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:01.279Z"}
-{"level":"info","message":"http 200 GET /api/v1/results/leaderboard?board=community 2664 - 339.274 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:01.629Z"}
-{"level":"info","message":"http 200 GET /api/v1/results/leaderboard?board=participation 193 - 346.004 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:01.991Z"}
-{"level":"info","message":"http 200 GET /api/v1/triathlon/overview 4006 - 621.963 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:02.626Z"}
-{"level":"info","message":"http 200 GET /api/v1/triathlon/live-activity 294 - 682.394 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:03.326Z"}
-{"level":"info","message":"http 200 GET /api/v1/triathlon/map 4327 - 720.314 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:04.052Z"}
-{"level":"info","message":"http 200 GET /api/v1/triathlon/impact 1053 - 389.888 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:04.450Z"}
-{"level":"info","message":"http 200 GET /api/v1/community/posts 1620 - 339.988 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:04.821Z"}
-{"level":"warn","message":"http 401 POST /api/v1/community/posts 36 - 391.883 ms - 127.0.0.1","timestamp":"2026-09-17T15:30:07.113Z"}
 [Reservation Worker] ⏳ Checking stock reservations & reminders in Supabase...
 [Reservation Worker] ⏳ Checking stock reservations & reminders in Supabase...
 [Reservation Worker] ⏳ Checking stock reservations & reminders in Supabase...

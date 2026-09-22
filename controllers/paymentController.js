@@ -10,15 +10,124 @@ import textifySms from '../services/textifySmsService.js';
 export const initiatePayment = async (req, res) => {
   try {
     const rawOrderNumber = req.body.order_number || req.body.orderNumber;
-    const rawAmount = req.body.amount_tsh || req.body.amountTsh || req.body.amountTSh;
-    const phoneNumber = req.body.phone_number || req.body.phoneNumber || req.body.phone;
+    const rawAmount = req.body.amount_tsh || req.body.amountTsh || req.body.amountTSh || req.body.amount;
+    const phoneNumber = req.body.phone_number || req.body.phoneNumber || req.body.phone
+      || (typeof req.body.customer === 'object' && req.body.customer !== null ? (req.body.customer.phone || req.body.customer.phone_number) : undefined);
     const provider = req.body.provider || 'mpesa';
     const registrationId = req.body.registrationId || req.body.registration_id;
+    const orderMetadata = (typeof req.body.metadata === 'object' && req.body.metadata !== null)
+      ? req.body.metadata
+      : {};
+    const orderDescription = typeof req.body.description === 'string' ? req.body.description : null;
 
     let orderNumber = rawOrderNumber;
     let amountTsh = rawAmount ? parseInt(rawAmount, 10) : 0;
 
-    // If registrationId is supplied without orderNumber, look up or derive matching order
+    // ── Canonical contract (FRONTEND-TOURE-DE-ROTARY): no order_number and no
+    // registrationId — the caller sends {amount, description, customer,
+    // metadata} and expects {paymentUrl, transactionId}.
+    if (!orderNumber && !registrationId && amountTsh > 0 && orderDescription) {
+      const descriptionTag = orderDescription.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 24).toUpperCase() || 'PAYMENT';
+      const metaUserId = orderMetadata.user_id || orderMetadata.userId;
+      const metaCategory = typeof orderMetadata.category === 'string' ? orderMetadata.category : null;
+
+      // Resolve the payer to a real profile when the metadata carries an id.
+      let payerProfileId = null;
+      if (typeof metaUserId === 'string' && metaUserId) {
+        const { data: profileRow } = await supabase
+          .from('profiles')
+          .select('id')
+          .or(`id.eq.${metaUserId},auth_user_id.eq.${metaUserId}`)
+          .maybeSingle();
+        payerProfileId = profileRow?.id || null;
+      }
+
+      // Orders require an edition (cart flow resolves year=2026 the same way).
+      const { data: editionRow } = await supabase
+        .from('event_editions')
+        .select('id')
+        .eq('year', 2026)
+        .maybeSingle();
+      if (!editionRow) {
+        console.error('[PaymentInitiate] Event edition 2026 not found; cannot anchor canonical order');
+        return res.status(500).json({ error: 'Event edition is not configured. Contact support.', message: 'Event edition is not configured. Contact support.' });
+      }
+
+      // Registration flow (PayStep): the frontend already inserted a pending
+      // registration (user_id = auth.uid), whose migration-010 trigger created
+      // an order. Reconcile with it so the standard webhook flow (ticket
+      // issuance + registration confirmation via source_registration_id)
+      // completes it unchanged instead of leaving an orphan 0-total order.
+      let reconciled = false;
+      if (payerProfileId) {
+        let regQuery = supabase
+          .from('registrations')
+          .select('id')
+          .eq('user_id', payerProfileId)
+          .eq('payment_status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (metaCategory) regQuery = regQuery.eq('category', metaCategory);
+        const { data: pendingReg } = await regQuery.maybeSingle();
+
+        if (pendingReg) {
+          const { data: trigOrder } = await supabase
+            .from('orders')
+            .select('id, order_number, total_tsh')
+            .eq('source_registration_id', pendingReg.id)
+            .maybeSingle();
+
+          if (trigOrder) {
+            orderNumber = trigOrder.order_number;
+            reconciled = true;
+            // Price the trigger-created order (created with a 0 total) so the
+            // webhook's amount cross-check passes. Priced orders are authoritative.
+            if (!trigOrder.total_tsh) {
+              const oR = await supabase
+                .from('orders')
+                .update({ subtotal_tsh: amountTsh, total_tsh: amountTsh, updated_at: new Date().toISOString() })
+                .eq('id', trigOrder.id);
+              if (oR.error) console.error('[PaymentInitiate] Failed to price reconciled order:', oR.error.message);
+              const iR = await supabase
+                .from('order_items')
+                .update({ unit_price_tsh: amountTsh, subtotal_tsh: amountTsh })
+                .eq('order_id', trigOrder.id)
+                .eq('item_type', 'activity_ticket');
+              if (iR.error) console.error('[PaymentInitiate] Failed to price reconciled order item:', iR.error.message);
+            }
+          }
+        }
+      }
+
+      // Donation / standalone flow: anchor the charge with a pending order the
+      // webhook can complete via metadata (donation_id).
+      if (!reconciled) {
+        orderNumber = `TDR-2026-${descriptionTag}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        const { error: orderErr } = await supabase
+          .from('orders')
+          .insert({
+            order_number: orderNumber,
+            profile_id: payerProfileId,
+            edition_id: editionRow.id,
+            status: 'pending',
+            subtotal_tsh: amountTsh,
+            total_tsh: amountTsh,
+            currency: 'TZS',
+            billing_phone: typeof phoneNumber === 'string' ? phoneNumber : '',
+            customer_email: (typeof req.body.customer === 'object' && req.body.customer !== null) ? (req.body.customer.email || null) : null,
+            notes: orderDescription,
+            metadata: orderMetadata,
+            description: orderDescription,
+          });
+
+        if (orderErr) {
+          console.error('[PaymentInitiate] Canonical order creation failed:', orderErr.message);
+          return res.status(502).json({ error: 'Could not create payment order', message: 'Could not create payment order' });
+        }
+      }
+    }
+
     if (!orderNumber && registrationId) {
       const { data: regOrder } = await supabase
         .from('orders')
@@ -110,9 +219,18 @@ export const initiatePayment = async (req, res) => {
       });
     }
 
+    const resolvedRef = paymeResult.payme_reference || paymeResult.transaction_ref || paymeResult.id || paymeResult.transaction_id || orderNumber;
+
     return res.status(200).json({
-      checkoutUrl: paymeResult.checkout_url || null,
-      transactionRef: paymeResult.payme_reference || paymeResult.transaction_ref || orderNumber
+      // Legacy contract (tourderotary-dsm)
+      checkoutUrl: paymeResult.checkout_url || paymeResult.payment_url || paymeResult.data?.checkout_url || null,
+      transactionRef: resolvedRef,
+      // Canonical contract (FRONTEND-TOURE-DE-ROTARY): redirects via
+      // `window.location.href = payment.paymentUrl` and stores transactionId.
+      paymentUrl: paymeResult.checkout_url || paymeResult.payment_url || paymeResult.data?.checkout_url || null,
+      transactionId: resolvedRef,
+      // Extra context — ignored by both frontends, useful for debugging.
+      order_number: orderNumber
     });
   } catch (error) {
     console.error('Payment initiation error:', error);
@@ -240,6 +358,14 @@ export const handlePayMeWebhook = async (req, res) => {
         })
         .eq('referred_profile_id', order.profile_id)
         .eq('status', 'registered');
+      // ── Canonical donation flow: orders created by initiatePayment from a      // canonical payload carry metadata.donation_id. PayMe confirming the      // charge is the authoritative signal (the frontend's return-URL      // markDonationPaid is a convenience fallback) — flip the donation to      // 'paid' here so fundraising totals can't be spoofed by visiting a URL.      const donationId = order.metadata?.donation_id;      if (typeof donationId === 'string' && donationId) {
+        const dR = await supabase
+          .from('donations')
+          .update({ payment_status: 'paid', payme_reference: payme_reference || `order:${order.order_number}` })
+          .eq('id', donationId)
+          .eq('payment_status', 'pending');
+        if (dR.error) console.warn('[PayMe Webhook] Could not complete donation:', dR.error.message);
+      }
 
       // Find activity items to issue tickets
       const { data: orderItems } = await supabase
@@ -420,8 +546,11 @@ export const getPaymentVerification = async (req, res) => {
         .maybeSingle();
 
       if (reg) {
+        const legacyReg = reg.payment_status === 'completed' ? 'completed' : (reg.payment_status === 'failed' ? 'failed' : 'pending');
         return res.status(200).json({
-          status: reg.payment_status === 'completed' ? 'completed' : (reg.payment_status === 'failed' ? 'failed' : 'pending')
+          status: legacyReg,
+          // Canonical enum ('paid' | 'pending' | 'failed') for callers that read it.
+          canonical_status: legacyReg === 'completed' ? 'paid' : legacyReg
         });
       }
     }
@@ -432,9 +561,12 @@ export const getPaymentVerification = async (req, res) => {
 
     // Map internal order states to the frontend's expected 3-state enum: 'completed' | 'pending' | 'failed'
     const statusMap = { paid: 'completed', completed: 'completed', pending: 'pending', processing: 'pending', cancelled: 'failed', expired: 'failed', failed: 'failed' };
+    const legacyStatus = statusMap[resolvedOrder.status] || 'pending';
 
     return res.status(200).json({
-      status: statusMap[resolvedOrder.status] || 'pending'
+      status: legacyStatus,
+      // Canonical enum ('paid' | 'pending' | 'failed') for callers that read it.
+      canonical_status: legacyStatus === 'completed' ? 'paid' : legacyStatus
     });
   } catch (error) {
     console.error('getPaymentVerification exception:', error);

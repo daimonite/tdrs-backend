@@ -23,6 +23,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
+import dotenv from 'dotenv';
+
+dotenv.config({ quiet: true });
 
 const args = process.argv.slice(2);
 const STATUS_ONLY = args.includes('--status');

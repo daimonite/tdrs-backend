@@ -12,6 +12,10 @@ Built on **Node.js / Express 5** with **Supabase (PostgreSQL 16 + Auth + Storage
 
 **Current state:** 29 route modules · **147 endpoints** · 31 controllers · 3 background workers · migration ledger + runner · 22 contract tests (all passing) · all 30 audit findings closed.
 
+**Frontend compatibility:** the API serves **two frontend contracts** — the rich `tourderotary-dsm` app (HQ portal, 6-activity event) *and* the canonical `FRONTEND-TOURE-DE-ROTARY` app (registration wizard, feed, fundraising) — through one surface. The canonical app talks to Supabase directly for feed/registrations/fundraising; migration 019 provides those tables/views/RLS policies, and the payment endpoints accept both payload shapes.
+
+**Deploying?** See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — full cPanel/Passenger walkthrough for `api.tourderotary.tz`, DNS, env vars, migrations, SSL, and PayMe webhook wiring.
+
 ---
 
 ## Contents
@@ -27,7 +31,9 @@ Built on **Node.js / Express 5** with **Supabase (PostgreSQL 16 + Auth + Storage
 9. [Security model](#security-model)
 10. [Database & migrations](#database--migrations)
 11. [Testing & verification](#testing--verification)
-12. [Known limitations](#known-limitations)
+12. [Canonical frontend compatibility](#canonical-frontend-compatibility)
+13. [Deployment](#deployment)
+14. [Known limitations](#known-limitations)
 
 ---
 
@@ -210,15 +216,19 @@ Groups: `activity, admin, bib, campaign, cart, challenge, collectible, comms, co
 | `002_triggers_rls.sql` | Triggers (registration→order, sponsor/partner sync) + Row-Level Security policies. |
 | `003_seed.sql` | Activities, categories, course stages, waypoints (stages/waypoints flagged `is_confirmed = false` until verified against the real course). |
 | `018_audit_fixes.sql` | Multi-image posts (`media_urls`), registration uniqueness, RLS lockdown on bibs/challenges/results/consent, stale lifecycle cleanup. Idempotent. |
+| `019_canonical_frontend_contract.sql` | Canonical-frontend contract: `posts` view (feed CRUD via INSTEAD-OF triggers), `registrations.category/discipline/story/story_public/payment_ref`, `post_reactions.emoji` sync, `fundraising_campaigns` + `donations` with public donor RLS, `profiles.avatar_url`, `event_config.lifecycle_state`, `orders.metadata/description`, auth-uid→profile identity mapping triggers. Idempotent. |
 | `legacy/` | Archived pre-ledger SQL kept for history. |
 
 ### `scripts/`, `tests/`, `docs/`
 
 | File | Purpose |
 |---|---|
-| `scripts/migrate.js` | Ledger-tracked migration runner. Applies pending `migrations/*.sql` in filename order via the `exec_sql` RPC and records each. `--status` reports applied vs pending. Never re-runs an applied file. |
+| `scripts/migrate.js` | Ledger-tracked migration runner. Applies pending `migrations/*.sql` in filename order via the `exec_sql` RPC and records each. `--status` reports applied vs pending. Never re-runs an applied file. Loads `.env` itself. |
+| `scripts/apply-one.mjs` | Apply a single migration file out-of-order (used when the ledger chain has gaps, e.g. no `pgcrypto` for 003). Records the file in the ledger. |
+| `scripts/probe_schema.mjs` | Ground-truth schema probe — checks which tables/columns actually exist in the live DB before writing a migration against them. |
 | `tests/contract.test.js` | 22 HTTP contract tests: status codes, auth gates, pagination clamps, webhook signature/amount/idempotency. Safe against any seeded dev environment. |
 | `docs/FRONTEND_BACKEND_INTEGRATION.md` | Contract notes for the frontend team. |
+| `docs/DEPLOYMENT.md` | Production deployment guide (cPanel/Passenger host, DNS, env vars, migrations, SSL, PayMe webhook). |
 
 ---
 
@@ -404,6 +414,7 @@ npm run migrate          # apply pending, in filename order, ledger-tracked
 ```bash
 BASE_URL=http://localhost:8800 npx jest tests/contract.test.js   # 22 contract tests
 node verify_checklist.mjs                                        # 11-section E2E checklist
+node test_new_features.mjs                                       # 10-check feature suite
 ```
 
 Verified live during development (see `.freebuff/run.md` for the full log): registration→order→ticket→bib chain; webhook signature/amount/idempotency negatives; community CRUD + moderation (report → admin hide → non-staff 403); teams captain-only edit; challenges; consent grant→withdraw; collectible issue→verify; CSV exports (header row even when empty); promo codes; admin endpoints; phase sync + archive write-block; rate-limit headers; pagination clamps. CI (`.github/workflows/ci.yml`) boots the server and runs the contract suite on push.
@@ -422,3 +433,41 @@ Honest, specific, testable — not vague "in progress":
 - **In-memory rate limiting** resets on restart and doesn't share across instances (fine for the current single-instance deploy).
 
 Everything else described here — auth/RBAC, checkout and the full payment chain, tickets/check-in, community + moderation, teams, challenges, results ingestion and leaderboards, photos/Find-Me, digital bibs, consent, phase engine with archive, admin tooling, comms queue, audit logging — is implemented, mounted, and covered by the verification suite.
+
+---
+
+## Canonical frontend compatibility
+
+The canonical frontend (`github.com/smart01-bot/FRONTEND-TOURE-DE-ROTARY`, branch `development`) is a Supabase-direct app: besides the REST API it reads/writes the database directly with the anon/authenticated clients. The backend supports both access paths simultaneously.
+
+### What the API accepts
+
+| Endpoint | Legacy contract (`tourderotary-dsm`) | Canonical contract (`FRONTEND-TOURE-DE-ROTARY`) |
+|---|---|---|
+| `POST /payments/initiate` | `{order_number\|registrationId, amount_tsh, phone}` | `{amount, description, customer{name,email,phone}, metadata}` — no auth, no order_number |
+| initiate response | `{checkoutUrl, transactionRef}` | `{paymentUrl, transactionId}` (both returned on every response) |
+| `GET /payments/verify/:ref` | `status: completed\|pending\|failed` | `status` keeps the legacy enum; `canonical_status` carries `paid\|pending\|failed` |
+
+Canonical initiate routing:
+- If `metadata.user_id` matches a **pending registration** (the canonical PayStep inserts one, and a DB trigger creates its order), the charge is **reconciled** with that order — the webhook then completes the standard flow (ticket + digital bib + registration confirmation) unchanged.
+- Otherwise (donations), a **pending order is anchored** carrying `metadata.donation_id`; the webhook flips the donation to `paid` server-side when PayMe confirms, making the frontend's return-URL `markDonationPaid` a fallback rather than the source of truth.
+
+### What the database provides (migration 019)
+
+- `posts` — a view over `community_posts` with INSTEAD-OF triggers so the canonical feed's direct Supabase CRUD works, with `auth.uid()` → `profiles.id` identity mapping (seeded profiles have different ids than auth users).
+- `registrations.category` (`sprint\|olympic\|relay`), `discipline` (`swim\|bike\|run`), `story`, `story_public`, `payment_ref`; status CHECKs widened to the union of both frontends' enums.
+- `post_reactions.emoji` (`fire\|heart\|clap`) kept in sync with the API's `reaction_type` by trigger.
+- `fundraising_campaigns` + `donations` with RLS for the public donor flow (anon inserts pending donations, anon marks them paid pending→paid only, `donor_email` withheld from public reads).
+- `profiles.avatar_url`, `event_config.lifecycle_state` (auto-synced from `phase`), `orders.metadata`/`orders.description`.
+
+Verified live: canonical initiate creates/reconciles the order and reaches the PayMe boundary; the full anon donor flow (insert pending → mark paid → public read) passes through RLS; `posts` view select works; contract suite 22/22, checklist 13/13, features 10/10 all green after the change.
+
+> **Webhook note:** the canonical frontend sends a self-referencing `callback_url`. Configure the webhook URL in the **PayMe dashboard** to point at `https://api.tourderotary.tz/api/v1/payments/payme/webhook` — that handler is the authoritative one.
+
+---
+
+## Deployment
+
+Production target is the cPanel/Passenger host (Node 20) serving `api.tourderotary.tz`, with the canonical frontend on Vercel and Supabase staying remote.
+
+The full walkthrough — subdomain creation, Node.js app setup, environment variables, code upload, migrations, AutoSSL, PayMe webhook wiring, and the post-deploy checklist — lives in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.

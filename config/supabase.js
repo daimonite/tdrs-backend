@@ -12,7 +12,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
     '[config/supabase.js] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required. ' +
-    'Set them in your .env file — do not hardcode credentials in source.'
+    'Set them in your .env file  do not hardcode credentials in source.'
   );
 }
 

@@ -40,14 +40,20 @@ export const getPhotos = async (req, res) => {
 export const searchPhotosByBib = async (req, res) => {
   try {
     const { bib_number } = req.params;
-    if (!/^\d+$/.test(bib_number)) return res.status(400).json({ error: 'Invalid bib number' });
+    // Bib numbers are not always numeric — the PayMe webhook issues
+    // category-prefixed numbers like "CYC-2026-123". Accept any sane
+    // identifier (alphanumerics, hyphens, underscores) up to 32 chars,
+    // otherwise photos tagged with the backend's own bib format are
+    // unreachable from the frontend's "Find Me in the Race" search.
+    const bib = String(bib_number || '').trim();
+    if (!/^[A-Za-z0-9_-]{1,32}$/.test(bib)) return res.status(400).json({ error: 'Invalid bib number' });
     const { data, error } = await supabase
       .from('race_photos')
       .select('*')
-      .contains('bib_numbers', [bib_number])
+      .contains('bib_numbers', [bib])
       .order('taken_at', { ascending: true });
     if (error) throw error;
-    res.json({ success: true, bib_number, count: (data || []).length, data: data || [] });
+    res.json({ success: true, bib_number: bib, count: (data || []).length, data: data || [] });
   } catch (err) {
     console.error('Error searching photos by bib:', err);
     res.status(500).json({ error: 'Failed to search photos' });

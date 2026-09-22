@@ -1,8 +1,8 @@
 -- =============================================================================
--- 018 — Audit fixes: RLS tightening (gap 15), multi-image posts (gap 14),
+-- 004 — Audit fixes: RLS tightening (gap 15), multi-image posts (gap 14),
 --       registrations uniqueness (gap 26), consent hardening (gap 11).
--- Apply in Supabase SQL Editor AFTER 017. Safe to run once; statements are
--- idempotent (IF EXISTS / IF NOT EXISTS / DROP+CREATE).
+-- Part of the sequential migration chain: 000 → 001 → 002 → 003 → 004 → 005.
+-- Apply AFTER 003_seed.sql. Idempotent (IF EXISTS / IF NOT EXISTS / DROP+CREATE).
 -- =============================================================================
 
 -- ── 1. GAP 14: multi-image feed posts ────────────────────────────────────────

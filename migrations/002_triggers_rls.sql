@@ -1,6 +1,11 @@
 -- ==============================================================================
 -- TOUR DE DAR 2026 — CONSOLIDATED TRIGGERS & RLS (002_triggers_rls.sql)
 --
+-- Part of the sequential migration chain: 000 → 001 → 002 → 003 → 004 → 005.
+-- Idempotent: every CREATE TRIGGER / CREATE POLICY is preceded by a
+-- DROP ... IF EXISTS guard, so re-running is safe (via `npm run migrate`
+-- or the Supabase SQL editor).
+--
 -- This file defines:
 --   1. Helper security functions (role resolution, staff check)
 --   2. Auth signup linking trigger (auth.users -> profiles)
@@ -133,6 +138,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
@@ -155,6 +161,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_prevent_self_role_escalation ON public.profiles;
 DROP TRIGGER IF EXISTS trg_prevent_self_role_escalation ON public.profiles;
 CREATE TRIGGER trg_prevent_self_role_escalation
   BEFORE UPDATE ON public.profiles
@@ -209,6 +216,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_registration_to_order ON public.registrations;
 DROP TRIGGER IF EXISTS trg_registration_to_order ON public.registrations;
 CREATE TRIGGER trg_registration_to_order
   AFTER INSERT ON public.registrations
@@ -268,6 +276,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_registration_status_sync ON public.registrations;
+DROP TRIGGER IF EXISTS trg_registration_status_sync ON public.registrations;
 CREATE TRIGGER trg_registration_status_sync
   AFTER UPDATE ON public.registrations
   FOR EACH ROW EXECUTE FUNCTION public.registration_status_sync();
@@ -294,6 +303,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_protect_registration_columns ON public.registrations;
 DROP TRIGGER IF EXISTS trg_protect_registration_columns ON public.registrations;
 CREATE TRIGGER trg_protect_registration_columns
   BEFORE UPDATE ON public.registrations
@@ -336,6 +346,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_product_to_variants ON public.products;
+DROP TRIGGER IF EXISTS trg_product_to_variants ON public.products;
 CREATE TRIGGER trg_product_to_variants
   AFTER INSERT ON public.products
   FOR EACH ROW EXECUTE FUNCTION public.product_to_variants();
@@ -371,6 +382,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_sync_product_stock ON public.product_variants;
+DROP TRIGGER IF EXISTS trg_sync_product_stock ON public.product_variants;
 CREATE TRIGGER trg_sync_product_stock
   AFTER INSERT OR UPDATE OR DELETE ON public.product_variants
   FOR EACH ROW EXECUTE FUNCTION public.sync_product_stock();
@@ -400,6 +412,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_sync_phase_from_event_config ON public.event_config;
+DROP TRIGGER IF EXISTS trg_sync_phase_from_event_config ON public.event_config;
 CREATE TRIGGER trg_sync_phase_from_event_config
   AFTER UPDATE OF phase ON public.event_config
   FOR EACH ROW EXECUTE FUNCTION public.sync_phase_from_event_config();
@@ -425,6 +438,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_sync_phase_from_event_lifecycle ON public.event_lifecycle;
 DROP TRIGGER IF EXISTS trg_sync_phase_from_event_lifecycle ON public.event_lifecycle;
 CREATE TRIGGER trg_sync_phase_from_event_lifecycle
   AFTER UPDATE OF current_mode ON public.event_lifecycle
@@ -471,6 +485,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS trg_audit_log_insert ON public.audit_log;
+DROP TRIGGER IF EXISTS trg_audit_log_insert ON public.audit_log;
 CREATE TRIGGER trg_audit_log_insert
   INSTEAD OF INSERT ON public.audit_log
   FOR EACH ROW EXECUTE FUNCTION public.trg_audit_log_insert();
@@ -514,30 +529,37 @@ ALTER TABLE public.research_consents ENABLE ROW LEVEL SECURITY;
 
 -- 8.1 PROFILES
 DROP POLICY IF EXISTS profiles_select_own_or_staff ON public.profiles;
+DROP POLICY IF EXISTS profiles_select_own_or_staff ON public.profiles;
 CREATE POLICY profiles_select_own_or_staff ON public.profiles
   FOR SELECT USING (id = public.current_profile_id() OR public.is_volunteer_or_staff());
 
 DROP POLICY IF EXISTS profiles_update_own ON public.profiles;
+DROP POLICY IF EXISTS profiles_update_own ON public.profiles;
 CREATE POLICY profiles_update_own ON public.profiles
   FOR UPDATE USING (id = public.current_profile_id()) WITH CHECK (id = public.current_profile_id());
 
+DROP POLICY IF EXISTS profiles_update_staff ON public.profiles;
 DROP POLICY IF EXISTS profiles_update_staff ON public.profiles;
 CREATE POLICY profiles_update_staff ON public.profiles
   FOR UPDATE USING (public.is_staff()) WITH CHECK (public.is_staff());
 
 -- 8.2 REGISTRATIONS
 DROP POLICY IF EXISTS registrations_select_authenticated ON public.registrations;
+DROP POLICY IF EXISTS registrations_select_authenticated ON public.registrations;
 CREATE POLICY registrations_select_authenticated ON public.registrations
   FOR SELECT USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS registrations_insert_own ON public.registrations;
 DROP POLICY IF EXISTS registrations_insert_own ON public.registrations;
 CREATE POLICY registrations_insert_own ON public.registrations
   FOR INSERT WITH CHECK (user_id = public.current_profile_id() AND status = 'pending' AND payment_status = 'pending');
 
 DROP POLICY IF EXISTS registrations_update_staff ON public.registrations;
+DROP POLICY IF EXISTS registrations_update_staff ON public.registrations;
 CREATE POLICY registrations_update_staff ON public.registrations
   FOR UPDATE USING (public.is_staff()) WITH CHECK (public.is_staff());
 
+DROP POLICY IF EXISTS registrations_checkin_volunteer ON public.registrations;
 DROP POLICY IF EXISTS registrations_checkin_volunteer ON public.registrations;
 CREATE POLICY registrations_checkin_volunteer ON public.registrations
   FOR UPDATE USING (public.current_role() = 'volunteer')
@@ -545,174 +567,219 @@ CREATE POLICY registrations_checkin_volunteer ON public.registrations
 
 -- 8.3 SPONSORS & PARTNERS
 DROP POLICY IF EXISTS sponsors_select_own_or_staff ON public.sponsors;
+DROP POLICY IF EXISTS sponsors_select_own_or_staff ON public.sponsors;
 CREATE POLICY sponsors_select_own_or_staff ON public.sponsors
   FOR SELECT USING (user_id = public.current_profile_id() OR public.is_staff());
 
+DROP POLICY IF EXISTS sponsors_write_staff ON public.sponsors;
 DROP POLICY IF EXISTS sponsors_write_staff ON public.sponsors;
 CREATE POLICY sponsors_write_staff ON public.sponsors
   FOR UPDATE USING (public.is_staff()) WITH CHECK (public.is_staff());
 
 DROP POLICY IF EXISTS sponsor_assets_select_owner_or_staff ON public.sponsor_assets;
+DROP POLICY IF EXISTS sponsor_assets_select_owner_or_staff ON public.sponsor_assets;
 CREATE POLICY sponsor_assets_select_owner_or_staff ON public.sponsor_assets
   FOR SELECT USING (public.is_staff() OR sponsor_id IN (SELECT id FROM public.sponsors WHERE user_id = public.current_profile_id()));
 
+DROP POLICY IF EXISTS partners_select_own_or_staff ON public.partners;
 DROP POLICY IF EXISTS partners_select_own_or_staff ON public.partners;
 CREATE POLICY partners_select_own_or_staff ON public.partners
   FOR SELECT USING (user_id = public.current_profile_id() OR public.is_staff());
 
 DROP POLICY IF EXISTS partners_write_staff ON public.partners;
+DROP POLICY IF EXISTS partners_write_staff ON public.partners;
 CREATE POLICY partners_write_staff ON public.partners
   FOR UPDATE USING (public.is_staff()) WITH CHECK (public.is_staff());
 
 DROP POLICY IF EXISTS partner_deliverables_select_owner_or_staff ON public.partner_deliverables;
+DROP POLICY IF EXISTS partner_deliverables_select_owner_or_staff ON public.partner_deliverables;
 CREATE POLICY partner_deliverables_select_owner_or_staff ON public.partner_deliverables
   FOR SELECT USING (public.is_staff() OR partner_id IN (SELECT id FROM public.partners WHERE user_id = public.current_profile_id()));
 
+DROP POLICY IF EXISTS partner_deliverables_write_staff ON public.partner_deliverables;
 DROP POLICY IF EXISTS partner_deliverables_write_staff ON public.partner_deliverables;
 CREATE POLICY partner_deliverables_write_staff ON public.partner_deliverables
   FOR UPDATE USING (public.is_staff()) WITH CHECK (public.is_staff());
 
 -- 8.4 ORDERS & PRODUCTS
 DROP POLICY IF EXISTS orders_select_own_or_staff ON public.orders;
+DROP POLICY IF EXISTS orders_select_own_or_staff ON public.orders;
 CREATE POLICY orders_select_own_or_staff ON public.orders
   FOR SELECT USING (user_id = public.current_profile_id() OR profile_id = public.current_profile_id() OR public.is_staff());
 
+DROP POLICY IF EXISTS orders_write_staff ON public.orders;
 DROP POLICY IF EXISTS orders_write_staff ON public.orders;
 CREATE POLICY orders_write_staff ON public.orders
   FOR UPDATE USING (public.is_staff()) WITH CHECK (public.is_staff());
 
 DROP POLICY IF EXISTS products_select_public ON public.products;
+DROP POLICY IF EXISTS products_select_public ON public.products;
 CREATE POLICY products_select_public ON public.products
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS products_write_staff ON public.products;
 DROP POLICY IF EXISTS products_write_staff ON public.products;
 CREATE POLICY products_write_staff ON public.products
   FOR UPDATE USING (public.is_staff()) WITH CHECK (public.is_staff());
 
 -- 8.5 EVENT CONFIG & AUDIT LOGS
 DROP POLICY IF EXISTS event_config_select_public ON public.event_config;
+DROP POLICY IF EXISTS event_config_select_public ON public.event_config;
 CREATE POLICY event_config_select_public ON public.event_config
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS event_config_write_staff ON public.event_config;
 DROP POLICY IF EXISTS event_config_write_staff ON public.event_config;
 CREATE POLICY event_config_write_staff ON public.event_config
   FOR ALL USING (public.is_staff()) WITH CHECK (public.is_staff());
 
 DROP POLICY IF EXISTS audit_log_select_staff ON public.audit_logs;
+DROP POLICY IF EXISTS audit_log_select_staff ON public.audit_logs;
 CREATE POLICY audit_log_select_staff ON public.audit_logs
   FOR SELECT USING (public.is_staff());
 
+DROP POLICY IF EXISTS audit_log_insert_staff ON public.audit_logs;
 DROP POLICY IF EXISTS audit_log_insert_staff ON public.audit_logs;
 CREATE POLICY audit_log_insert_staff ON public.audit_logs
   FOR INSERT WITH CHECK (public.is_staff());
 
 -- 8.6 SHIFTS
 DROP POLICY IF EXISTS shifts_select_authenticated ON public.shifts;
+DROP POLICY IF EXISTS shifts_select_authenticated ON public.shifts;
 CREATE POLICY shifts_select_authenticated ON public.shifts
   FOR SELECT USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS volunteer_shifts_select_own_or_staff ON public.volunteer_shifts;
 DROP POLICY IF EXISTS volunteer_shifts_select_own_or_staff ON public.volunteer_shifts;
 CREATE POLICY volunteer_shifts_select_own_or_staff ON public.volunteer_shifts
   FOR SELECT USING (volunteer_id = public.current_profile_id() OR public.is_staff());
 
 DROP POLICY IF EXISTS volunteer_shifts_insert_own ON public.volunteer_shifts;
+DROP POLICY IF EXISTS volunteer_shifts_insert_own ON public.volunteer_shifts;
 CREATE POLICY volunteer_shifts_insert_own ON public.volunteer_shifts
   FOR INSERT WITH CHECK (volunteer_id = public.current_profile_id());
 
+DROP POLICY IF EXISTS volunteer_shifts_delete_own ON public.volunteer_shifts;
 DROP POLICY IF EXISTS volunteer_shifts_delete_own ON public.volunteer_shifts;
 CREATE POLICY volunteer_shifts_delete_own ON public.volunteer_shifts
   FOR DELETE USING (volunteer_id = public.current_profile_id());
 
 -- 8.7 TRIATHLON & COMMUNITY PUBLIC READ POLICIES
 DROP POLICY IF EXISTS "Public read event_lifecycle" ON public.event_lifecycle;
+DROP POLICY IF EXISTS "Public read event_lifecycle" ON public.event_lifecycle;
 CREATE POLICY "Public read event_lifecycle" ON public.event_lifecycle FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read triathlon_stages" ON public.triathlon_stages;
 DROP POLICY IF EXISTS "Public read triathlon_stages" ON public.triathlon_stages;
 CREATE POLICY "Public read triathlon_stages" ON public.triathlon_stages FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Public read race_categories" ON public.race_categories;
+DROP POLICY IF EXISTS "Public read race_categories" ON public.race_categories;
 CREATE POLICY "Public read race_categories" ON public.race_categories FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read teams" ON public.teams;
 DROP POLICY IF EXISTS "Public read teams" ON public.teams;
 CREATE POLICY "Public read teams" ON public.teams FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Public read team_members" ON public.team_members;
+DROP POLICY IF EXISTS "Public read team_members" ON public.team_members;
 CREATE POLICY "Public read team_members" ON public.team_members FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read community_posts" ON public.community_posts;
 DROP POLICY IF EXISTS "Public read community_posts" ON public.community_posts;
 CREATE POLICY "Public read community_posts" ON public.community_posts FOR SELECT USING (status = 'published');
 
 DROP POLICY IF EXISTS "Public read post_reactions" ON public.post_reactions;
+DROP POLICY IF EXISTS "Public read post_reactions" ON public.post_reactions;
 CREATE POLICY "Public read post_reactions" ON public.post_reactions FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read post_comments" ON public.post_comments;
 DROP POLICY IF EXISTS "Public read post_comments" ON public.post_comments;
 CREATE POLICY "Public read post_comments" ON public.post_comments FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Public read why_i_participate" ON public.why_i_participate;
+DROP POLICY IF EXISTS "Public read why_i_participate" ON public.why_i_participate;
 CREATE POLICY "Public read why_i_participate" ON public.why_i_participate FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read challenges" ON public.challenges;
 DROP POLICY IF EXISTS "Public read challenges" ON public.challenges;
 CREATE POLICY "Public read challenges" ON public.challenges FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Public read user_challenges" ON public.user_challenges;
+DROP POLICY IF EXISTS "Public read user_challenges" ON public.user_challenges;
 CREATE POLICY "Public read user_challenges" ON public.user_challenges FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read digital_bibs" ON public.digital_bibs;
 DROP POLICY IF EXISTS "Public read digital_bibs" ON public.digital_bibs;
 CREATE POLICY "Public read digital_bibs" ON public.digital_bibs FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Public read triathlon_results" ON public.triathlon_results;
+DROP POLICY IF EXISTS "Public read triathlon_results" ON public.triathlon_results;
 CREATE POLICY "Public read triathlon_results" ON public.triathlon_results FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read map_waypoints" ON public.map_waypoints;
 DROP POLICY IF EXISTS "Public read map_waypoints" ON public.map_waypoints;
 CREATE POLICY "Public read map_waypoints" ON public.map_waypoints FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Public read race_photos" ON public.race_photos;
+DROP POLICY IF EXISTS "Public read race_photos" ON public.race_photos;
 CREATE POLICY "Public read race_photos" ON public.race_photos FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Public read community_impact" ON public.community_impact;
 DROP POLICY IF EXISTS "Public read community_impact" ON public.community_impact;
 CREATE POLICY "Public read community_impact" ON public.community_impact FOR SELECT USING (true);
 
 -- 8.8 COMMUNITY WRITES WITH ARCHIVE-MODE LOCKOUT
+DROP POLICY IF EXISTS "Auth write community_posts" ON public.community_posts;
 DROP POLICY IF EXISTS "Auth write community_posts" ON public.community_posts;
 CREATE POLICY "Auth write community_posts" ON public.community_posts FOR INSERT
   WITH CHECK ((auth.uid() = user_id OR auth.role() = 'service_role')
               AND (SELECT phase FROM public.event_config WHERE id = 1) <> 'archive');
 
 DROP POLICY IF EXISTS "Auth write post_reactions" ON public.post_reactions;
+DROP POLICY IF EXISTS "Auth write post_reactions" ON public.post_reactions;
 CREATE POLICY "Auth write post_reactions" ON public.post_reactions FOR INSERT
   WITH CHECK ((auth.uid() = user_id OR auth.role() = 'service_role')
               AND (SELECT phase FROM public.event_config WHERE id = 1) <> 'archive');
 
+DROP POLICY IF EXISTS "Auth write post_comments" ON public.post_comments;
 DROP POLICY IF EXISTS "Auth write post_comments" ON public.post_comments;
 CREATE POLICY "Auth write post_comments" ON public.post_comments FOR INSERT
   WITH CHECK ((auth.uid() = user_id OR auth.role() = 'service_role')
               AND (SELECT phase FROM public.event_config WHERE id = 1) <> 'archive');
 
 DROP POLICY IF EXISTS "Auth write team_members" ON public.team_members;
+DROP POLICY IF EXISTS "Auth write team_members" ON public.team_members;
 CREATE POLICY "Auth write team_members" ON public.team_members FOR INSERT
   WITH CHECK ((auth.uid() = user_id OR auth.role() = 'service_role')
               AND (SELECT phase FROM public.event_config WHERE id = 1) <> 'archive');
 
 DROP POLICY IF EXISTS "Auth write teams" ON public.teams;
+DROP POLICY IF EXISTS "Auth write teams" ON public.teams;
 CREATE POLICY "Auth write teams" ON public.teams FOR INSERT
   WITH CHECK (auth.uid() IS NOT NULL OR auth.role() = 'service_role');
 
+DROP POLICY IF EXISTS "Auth write why_i_participate" ON public.why_i_participate;
 DROP POLICY IF EXISTS "Auth write why_i_participate" ON public.why_i_participate;
 CREATE POLICY "Auth write why_i_participate" ON public.why_i_participate FOR INSERT
   WITH CHECK (auth.uid() = user_id OR auth.role() = 'service_role');
 
 DROP POLICY IF EXISTS "Auth write user_challenges" ON public.user_challenges;
+DROP POLICY IF EXISTS "Auth write user_challenges" ON public.user_challenges;
 CREATE POLICY "Auth write user_challenges" ON public.user_challenges FOR ALL
   USING (auth.uid() = user_id OR auth.role() = 'service_role');
 
+DROP POLICY IF EXISTS "Auth write research_consents" ON public.research_consents;
 DROP POLICY IF EXISTS "Auth write research_consents" ON public.research_consents;
 CREATE POLICY "Auth write research_consents" ON public.research_consents FOR ALL
   USING (auth.uid() = user_id OR auth.role() = 'service_role');
 
 DROP POLICY IF EXISTS "Auth report posts" ON public.post_reports;
+DROP POLICY IF EXISTS "Auth report posts" ON public.post_reports;
 CREATE POLICY "Auth report posts" ON public.post_reports FOR INSERT
   WITH CHECK (auth.uid() = reporter_id OR auth.role() = 'service_role');
 
+DROP POLICY IF EXISTS "Read own reports" ON public.post_reports;
 DROP POLICY IF EXISTS "Read own reports" ON public.post_reports;
 CREATE POLICY "Read own reports" ON public.post_reports FOR SELECT
   USING (auth.uid() = reporter_id OR auth.role() = 'service_role');

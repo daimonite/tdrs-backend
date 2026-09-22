@@ -1,19 +1,18 @@
 -- ==============================================================================
 -- TOUR DE DAR 2026 — CONSOLIDATED SCHEMA  (001_schema.sql)
 --
--- This file is the single source of truth for every table in the live
--- Supabase project (zovnkeaoorrxfjdxcmlk).
+-- This file is the single source of truth for every table in the project.
 -- It replaces migrations 001 – 017 (table creation portions only).
 --
--- HOW TO APPLY:
---   1. Open Supabase → SQL Editor.
---   2. Paste this entire file and click "Run".
---   3. Then run  002_triggers_rls.sql
---   4. Then run  003_seed.sql
+-- Part of the sequential migration chain: 000 → 001 → 002 → 003 → 004 → 005.
+-- Prefer applying via the runner:  npm run migrate   (after 000_ledger.sql
+-- has been applied once — see migrations/README.md). Pasting into the
+-- Supabase SQL editor also works, in filename order.
 --
--- IMPORTANT: Run in a fresh schema only. If tables already exist, the
--- CREATE TABLE IF NOT EXISTS guards will skip them safely, but later
--- ALTER TABLE lines may conflict. Review before re-running on a live DB.
+-- Idempotency: CREATE TABLE/INDEX statements are IF NOT EXISTS-guarded and
+-- skip cleanly on re-run, but on a database where tables already exist with
+-- a DIFFERENT shape, later columns/constraints assume the fresh-DB layout —
+-- re-running on a diverged live DB is not supported (use the live DB as-is).
 -- ==============================================================================
 
 -- ─── Extensions ───────────────────────────────────────────────────────────────

@@ -209,15 +209,7 @@ Groups: `activity, admin, bib, campaign, cart, challenge, collectible, comms, co
 
 ### `migrations/`
 
-| File | Purpose |
-|---|---|
-| `000_ledger.sql` | **Manual one-time bootstrap**: `schema_migrations` ledger + `exec_sql` RPC locked to service role. After this, the runner handles everything. |
-| `001_schema.sql` | Core tables (profiles, orders, registrations, tickets, payments, merch, …). |
-| `002_triggers_rls.sql` | Triggers (registration→order, sponsor/partner sync) + Row-Level Security policies. |
-| `003_seed.sql` | Activities, categories, course stages, waypoints (stages/waypoints flagged `is_confirmed = false` until verified against the real course). |
-| `018_audit_fixes.sql` | Multi-image posts (`media_urls`), registration uniqueness, RLS lockdown on bibs/challenges/results/consent, stale lifecycle cleanup. Idempotent. |
-| `019_canonical_frontend_contract.sql` | Canonical-frontend contract: `posts` view (feed CRUD via INSTEAD-OF triggers), `registrations.category/discipline/story/story_public/payment_ref`, `post_reactions.emoji` sync, `fundraising_campaigns` + `donations` with public donor RLS, `profiles.avatar_url`, `event_config.lifecycle_state`, `orders.metadata/description`, auth-uid→profile identity mapping triggers. Idempotent. |
-| `legacy/` | Archived pre-ledger SQL kept for history. |
+Sequential chain — `000` (runner bootstrap) → `001` (tables) → `002` (triggers/RLS) → `003` (seed) → `004` (audit fixes) → `005` (canonical-frontend schema). Every file is idempotent and ledger-tracked. See **[migrations/README.md](migrations/README.md)** for the full Supabase setup + migration guide. The pre-consolidation patch files are archived in `legacy/` (reference only).
 
 ### `scripts/`, `tests/`, `docs/`
 
@@ -398,13 +390,17 @@ Understand these before extending the backend:
 
 ## Database & migrations
 
+The database is **Supabase (PostgreSQL 16)** — [migrations/README.md](migrations/README.md) is the full setup guide (creating the project, which keys go where, storage bucket). The short version:
+
 ```bash
-npm run migrate:status   # applied vs pending
-npm run migrate          # apply pending, in filename order, ledger-tracked
+# one-time per Supabase project: paste migrations/000_ledger.sql into the Supabase SQL editor
+#   (it creates the exec_sql RPC + schema_migrations ledger the runner needs)
+npm run migrate          # apply pending migrations, in filename order, ledger-tracked
+npm run migrate:status   # applied vs pending — the source of truth
 ```
 
-- One-time manual step (documented in `migrations/000_ledger.sql`): create the ledger + `exec_sql` RPC in the Supabase SQL editor. After that, the runner is fully automatic.
-- Every migration file is idempotent (`IF EXISTS` / `IF NOT EXISTS` / guarded updates), so re-application is safe.
+- The chain provisions a **fresh Supabase project from zero**: `000` runner bootstrap → `001` all tables + extensions (`uuid-ossp`, `pgcrypto`) → `002` functions/triggers/RLS → `003` seed (edition, stages, categories, challenges, merch, test accounts) → `004` audit hardening → `005` canonical-frontend schema.
+- Every migration file is idempotent (`IF EXISTS` / `IF NOT EXISTS` / guarded updates), so re-application is safe. Future migrations: next number, never edit an applied file.
 - The ledger exists because migrations were previously applied by hand with no tracking — which is how migration 017 sat unapplied for weeks while the backend got debugged.
 
 ---

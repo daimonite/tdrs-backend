@@ -66,15 +66,19 @@ Zip the backend **excluding** `node_modules`, `.env`, `logs/`, `.freebuff/`, `to
 ### Step 5 — Install & run
 Node.js App screen → **Run NPM Install** → **Restart**.
 
-### Step 6 — Migrations (run once)
-cPanel **Terminal** (or SSH):
+### Step 6 — Migrations (run once per fresh Supabase project)
+
+> **Skip this step entirely if you are pointing at the existing Supabase project** — its schema is already current (chain fully applied). Migrations only need running when you create a NEW Supabase project.
+
+For a fresh Supabase project, first apply the one-time bootstrap: paste `migrations/000_ledger.sql` into the Supabase SQL editor (creates the `exec_sql` RPC the runner needs). Then in cPanel **Terminal** (or SSH):
 ```bash
 cd ~/api.tourderotary.tz
 source ~/nodevenv/api.tourderotary.tz/20/bin/activate && cd ~/api.tourderotary.tz   # path shown on the app screen
-npm run migrate          # ledger-tracked; idempotent; safe to re-run
-npm run migrate:status   # verify: everything applied
+npm run migrate          # ledger-tracked; applies 001→005 in order; idempotent
+npm run migrate:status   # verify: everything applied, 0 pending
 ```
-> Migration 019 (`019_canonical_frontend_contract.sql`) is required for the canonical frontend — it adds the `posts` view, `fundraising_campaigns`/`donations` tables, registrations columns, and payment-order metadata. It is idempotent and safe to re-run.
+Also create the public Storage bucket **`race-photos`** (Supabase Dashboard → Storage) — see migrations/README.md Part D.
+Full details: [migrations/README.md](../migrations/README.md).
 
 ### Step 7 — SSL
 **SSL/TLS Status → Run AutoSSL** for `api.tourderotary.tz` (and the main domain if prompted).

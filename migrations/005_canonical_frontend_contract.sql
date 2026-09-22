@@ -1,5 +1,8 @@
 -- ==============================================================================
--- 019_canonical_frontend_contract.sql
+-- 005_canonical_frontend_contract.sql
+--
+-- Part of the sequential migration chain: 000 → 001 → 002 → 003 → 004 → 005.
+-- Apply AFTER 004_audit_fixes.sql. Idempotent — safe to re-run.
 --
 -- Makes the database match the canonical frontend
 -- (github.com/smart01-bot/FRONTEND-TOURE-DE-ROTARY, development branch).

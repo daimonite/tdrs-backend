@@ -2,7 +2,7 @@
 /**
  * One-off: apply a single migration file via the exec_sql RPC,
  * bypassing the ledger's dependency on running all pending files in order.
- * Usage: node scripts/apply-one.mjs migrations/019_canonical_frontend_contract.sql
+ * Usage: node scripts/apply-one.mjs migrations/005_canonical_frontend_contract.sql
  */
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';

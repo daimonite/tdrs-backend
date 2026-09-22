@@ -9,6 +9,8 @@
 -- =============================================================================
 
 -- Thin RPC the runner uses to execute migration SQL with the service role.
+-- Guard rail: UPDATE/DELETE without a WHERE clause are rejected (same rule as
+-- the live project) so a malformed migration can never rewrite a whole table.
 CREATE OR REPLACE FUNCTION public.exec_sql(query TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -16,6 +18,9 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  IF upper(btrim(query)) ~ '^(UPDATE|DELETE)' AND query !~* '\bWHERE\b' THEN
+    RAISE EXCEPTION '% requires a WHERE clause', upper(split_part(btrim(query), ' ', 1));
+  END IF;
   EXECUTE query;
   RETURN 'ok';
 END;

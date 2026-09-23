@@ -100,7 +100,9 @@ CREATE TABLE IF NOT EXISTS public.activities (
 CREATE TABLE IF NOT EXISTS public.registrations (
   id              UUID        NOT NULL DEFAULT uuid_generate_v4(),
   user_id         UUID        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  activity_slug   TEXT        NOT NULL,
+  -- Nullable: the canonical frontend registers by `category` instead; the
+  -- registration_to_order trigger derives activity_slug from category.
+  activity_slug   TEXT,
   status          TEXT        NOT NULL DEFAULT 'pending'
                               CHECK (status IN ('pending','paid','checked_in','cancelled')),
   payment_status  TEXT        NOT NULL DEFAULT 'pending'

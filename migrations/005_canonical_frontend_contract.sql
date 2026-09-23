@@ -32,7 +32,83 @@
 -- ==============================================================================
 
 -- ── 1. REGISTRATIONS: new columns ───────────────────────────────────────────
+-- Canonical PayStep inserts {user_id, category, discipline, story} without
+-- activity_slug, so the legacy NOT NULL must be relaxed. The order trigger
+-- resolves the race category from NEW.category when activity_slug is absent
+-- (see registration_to_order, updated in section 1b).
+ALTER TABLE public.registrations ALTER COLUMN activity_slug DROP NOT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS category       TEXT;
+
+-- ── 1b. ORDER TRIGGER: canonical category mapping ───────────────────────────
+-- registration_to_order() must never fail the registrations insert: when
+-- activity_slug is NULL it maps NEW.category ('sprint'|'olympic'|'relay') to
+-- the seeded race_categories slugs, prices the order from entry_fee_tsh when
+-- amount_tsh is missing, and always writes a valid order_items row.
+CREATE OR REPLACE FUNCTION public.registration_to_order()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_ref_id        UUID;
+  v_title         TEXT;
+  v_edition_id    UUID;
+  v_phone         TEXT;
+  v_order_number  TEXT;
+  v_order_id      UUID;
+  v_activity_slug TEXT;
+  v_category      TEXT;
+  v_amount        NUMERIC;
+BEGIN
+  -- Canonical frontend: activity_slug absent → derive it from category.
+  -- Legacy frontend: activity_slug already set → used as-is.
+  IF NEW.activity_slug IS NOT NULL AND NEW.activity_slug <> '' THEN
+    v_activity_slug := NEW.activity_slug;
+  ELSE
+    v_category := LOWER(COALESCE(NEW.category, ''));
+    v_activity_slug := CASE v_category
+      WHEN 'sprint'  THEN 'sprint-individual'
+      WHEN 'olympic' THEN 'olympic-individual'
+      WHEN 'relay'   THEN 'triathlon-relay'
+      ELSE NULL
+    END;
+    NEW.activity_slug := v_activity_slug;
+  END IF;
+
+  -- Look up in race_categories (triathlon) first, fall back to activities (legacy)
+  SELECT id, name, entry_fee_tsh INTO v_ref_id, v_title, v_amount
+    FROM public.race_categories WHERE slug = v_activity_slug LIMIT 1;
+  IF v_ref_id IS NULL THEN
+    SELECT id, title INTO v_ref_id, v_title
+      FROM public.activities WHERE slug = v_activity_slug LIMIT 1;
+  END IF;
+  v_amount := COALESCE(NEW.amount_tsh, v_amount, 0);
+  v_title  := COALESCE(v_title, v_activity_slug, NEW.category, 'Tour de Dar registration');
+
+  SELECT id INTO v_edition_id FROM public.event_editions ORDER BY year DESC LIMIT 1;
+  SELECT COALESCE(phone_number, phone) INTO v_phone FROM public.profiles WHERE id = NEW.user_id;
+
+  v_order_number := 'TDR-2026-' || LPAD((10000 + floor(random() * 90000))::TEXT, 5, '0');
+
+  INSERT INTO public.orders (
+    order_number, profile_id, user_id, edition_id, status,
+    subtotal_tsh, discount_tsh, total_tsh, currency, billing_phone,
+    source_registration_id
+  ) VALUES (
+    v_order_number, NEW.user_id, NEW.user_id, v_edition_id,
+    CASE NEW.status WHEN 'paid' THEN 'paid' WHEN 'cancelled' THEN 'cancelled' ELSE 'pending' END,
+    v_amount, 0, v_amount, 'TZS',
+    COALESCE(v_phone, 'unknown'), NEW.id
+  )
+  RETURNING id INTO v_order_id;
+
+  INSERT INTO public.order_items (order_id, item_type, reference_id, description, quantity, unit_price_tsh, subtotal_tsh)
+  VALUES (v_order_id, 'activity_ticket', v_ref_id, v_title, 1, v_amount, v_amount);
+
+  RETURN NEW;
+END;
+$$;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discipline     TEXT;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS story          TEXT;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS story_public   BOOLEAN NOT NULL DEFAULT FALSE;
@@ -138,6 +214,16 @@ AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = NEW.user_id) THEN
     NEW.user_id := public.resolve_profile_id(NEW.user_id);
+  END IF;
+  -- Persist the derived slug on canonical rows so the registration is
+  -- self-describing in admin views (order trigger maps it the same way).
+  IF (NEW.activity_slug IS NULL OR NEW.activity_slug = '') AND NEW.category IS NOT NULL THEN
+    NEW.activity_slug := CASE NEW.category
+      WHEN 'sprint'  THEN 'sprint-individual'
+      WHEN 'olympic' THEN 'olympic-individual'
+      WHEN 'relay'   THEN 'triathlon-relay'
+      ELSE NEW.activity_slug
+    END;
   END IF;
   RETURN NEW;
 END $$;

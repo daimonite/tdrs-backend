@@ -184,12 +184,33 @@ DECLARE
   v_phone         TEXT;
   v_order_number  TEXT;
   v_order_id      UUID;
+  v_activity_slug TEXT;
+  v_amount        NUMERIC;
 BEGIN
-  -- Look up in race_categories (triathlon) first, fall back to activities (legacy)
-  SELECT id, name INTO v_ref_id, v_title FROM public.race_categories WHERE slug = NEW.activity_slug LIMIT 1;
-  IF v_ref_id IS NULL THEN
-    SELECT id, title INTO v_ref_id, v_title FROM public.activities WHERE slug = NEW.activity_slug LIMIT 1;
+  -- Look up in race_categories (triathlon) first, fall back to activities (legacy).
+  -- The canonical frontend registers via NEW.category without activity_slug;
+  -- map sprint/olympic/relay → seeded race_categories slugs and fall back to
+  -- the category entry fee so the order is priced and the item row valid.
+  IF NEW.activity_slug IS NOT NULL AND NEW.activity_slug <> '' THEN
+    v_activity_slug := NEW.activity_slug;
+  ELSE
+    v_activity_slug := CASE LOWER(COALESCE(NEW.category, ''))
+      WHEN 'sprint'  THEN 'sprint-individual'
+      WHEN 'olympic' THEN 'olympic-individual'
+      WHEN 'relay'   THEN 'triathlon-relay'
+      ELSE NULL
+    END;
+    NEW.activity_slug := v_activity_slug;
   END IF;
+
+  SELECT id, name, entry_fee_tsh INTO v_ref_id, v_title, v_amount
+    FROM public.race_categories WHERE slug = v_activity_slug LIMIT 1;
+  IF v_ref_id IS NULL THEN
+    SELECT id, title INTO v_ref_id, v_title
+      FROM public.activities WHERE slug = v_activity_slug LIMIT 1;
+  END IF;
+  v_amount := COALESCE(NEW.amount_tsh, v_amount, 0);
+  v_title  := COALESCE(v_title, v_activity_slug, NEW.category, 'Tour de Dar registration');
 
   SELECT id INTO v_edition_id FROM public.event_editions ORDER BY year DESC LIMIT 1;
   SELECT COALESCE(phone_number, phone) INTO v_phone FROM public.profiles WHERE id = NEW.user_id;
@@ -203,14 +224,13 @@ BEGIN
   ) VALUES (
     v_order_number, NEW.user_id, NEW.user_id, v_edition_id,
     CASE NEW.status WHEN 'paid' THEN 'paid' WHEN 'cancelled' THEN 'cancelled' ELSE 'pending' END,
-    COALESCE(NEW.amount_tsh, 0), 0, COALESCE(NEW.amount_tsh, 0), 'TZS',
+    v_amount, 0, v_amount, 'TZS',
     COALESCE(v_phone, 'unknown'), NEW.id
   )
   RETURNING id INTO v_order_id;
 
   INSERT INTO public.order_items (order_id, item_type, reference_id, description, quantity, unit_price_tsh, subtotal_tsh)
-  VALUES (v_order_id, 'activity_ticket', v_ref_id, COALESCE(v_title, NEW.activity_slug), 1,
-          COALESCE(NEW.amount_tsh, 0), COALESCE(NEW.amount_tsh, 0));
+  VALUES (v_order_id, 'activity_ticket', v_ref_id, v_title, 1, v_amount, v_amount);
 
   RETURN NEW;
 END;

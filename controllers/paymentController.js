@@ -80,9 +80,12 @@ export const initiatePayment = async (req, res) => {
           if (trigOrder) {
             orderNumber = trigOrder.order_number;
             reconciled = true;
-            // Price the trigger-created order (created with a 0 total) so the
-            // webhook's amount cross-check passes. Priced orders are authoritative.
-            if (!trigOrder.total_tsh) {
+            // Re-price the trigger-created order to the initiated amount so the
+            // webhook's amount cross-check passes. The canonical frontend shows
+            // the user a fee breakdown and charges base + 1.5% processing fee,
+            // so the DB's entry_fee_tsh default will NOT equal the charge —
+            // the amount PayMe is asked for is authoritative here.
+            if (Number(trigOrder.total_tsh) !== Number(amountTsh)) {
               const oR = await supabase
                 .from('orders')
                 .update({ subtotal_tsh: amountTsh, total_tsh: amountTsh, updated_at: new Date().toISOString() })

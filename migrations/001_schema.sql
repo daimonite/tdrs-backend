@@ -102,11 +102,13 @@ CREATE TABLE IF NOT EXISTS public.registrations (
   user_id         UUID        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   -- Nullable: the canonical frontend registers by `category` instead; the
   -- registration_to_order trigger derives activity_slug from category.
-  activity_slug   TEXT,
+  activity_slug   TEXT REFERENCES public.race_categories(slug),
   status          TEXT        NOT NULL DEFAULT 'pending'
-                              CHECK (status IN ('pending','paid','checked_in','cancelled')),
+                              -- Superset: legacy + canonical values.
+                              CHECK (status IN ('pending','paid','checked_in','cancelled','confirmed')),
   payment_status  TEXT        NOT NULL DEFAULT 'pending'
-                              CHECK (payment_status IN ('pending','processing','completed','failed','refunded')),
+                              -- Superset: legacy + canonical values.
+                              CHECK (payment_status IN ('pending','processing','completed','failed','refunded','paid')),
   amount_tsh      NUMERIC(12,2),
   bib_number      TEXT,
   t_shirt_size    TEXT,
@@ -124,7 +126,12 @@ CREATE TABLE IF NOT EXISTS public.orders (
   profile_id              UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
   edition_id              UUID        REFERENCES public.event_editions(id) ON DELETE SET NULL,
   status                  TEXT        NOT NULL DEFAULT 'pending'
-                                      CHECK (status IN ('pending','paid','cancelled','refunded')),
+                                      -- Mirrors the live project: full merch
+                                      -- lifecycle (processing/shipped/delivered/
+                                      -- expired). NOTE: no 'refunded' — refunds
+                                      -- live in refund_requests, the order row
+                                      -- is never marked refunded.
+                                      CHECK (status IN ('pending','processing','paid','shipped','delivered','cancelled','expired')),
   subtotal_tsh            NUMERIC(12,2) NOT NULL DEFAULT 0,
   discount_tsh            NUMERIC(12,2) NOT NULL DEFAULT 0,
   total_tsh               NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -138,6 +145,8 @@ CREATE TABLE IF NOT EXISTS public.orders (
   picked_up_at            TIMESTAMPTZ,
   notes                   TEXT,
   source_registration_id  UUID        REFERENCES public.registrations(id) ON DELETE SET NULL,
+  metadata                JSONB       NOT NULL DEFAULT '{}',
+  description             TEXT,
   CONSTRAINT orders_pkey PRIMARY KEY (id)
 );
 
@@ -145,8 +154,8 @@ CREATE TABLE IF NOT EXISTS public.orders (
 CREATE TABLE IF NOT EXISTS public.order_items (
   id              UUID        NOT NULL DEFAULT uuid_generate_v4(),
   order_id        UUID        NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
-  item_type       TEXT        NOT NULL CHECK (item_type IN ('activity_ticket','merchandise','donation')),
-  reference_id    UUID,
+  item_type       TEXT        NOT NULL CHECK (item_type IN ('activity_ticket','merchandise')),
+  reference_id    UUID        NOT NULL,
   description     TEXT        NOT NULL DEFAULT '',
   quantity        INTEGER     NOT NULL DEFAULT 1,
   unit_price_tsh  NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -179,12 +188,15 @@ CREATE TABLE IF NOT EXISTS public.tickets (
   order_id                UUID        NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
   profile_id              UUID        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   activity_id             UUID        REFERENCES public.race_categories(id) ON DELETE SET NULL,
-  bib_number              TEXT,
+  bib_number              TEXT        NOT NULL UNIQUE,
   qr_verification_token   TEXT        NOT NULL UNIQUE DEFAULT UPPER(MD5(RANDOM()::TEXT || CLOCK_TIMESTAMP()::TEXT)),
   checked_in              BOOLEAN     NOT NULL DEFAULT FALSE,
   checked_in_at           TIMESTAMPTZ,
   checked_in_by           UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
+  -- Nullable + indexed in the live project (matches webhook issuance flow:
+  -- the QR token is generated server-side before insert).
   source_registration_id  UUID        REFERENCES public.registrations(id) ON DELETE SET NULL,
+  check_in_station        TEXT,
   issued_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT tickets_pkey PRIMARY KEY (id)
@@ -560,6 +572,7 @@ CREATE TABLE IF NOT EXISTS public.event_config (
   event_date  TIMESTAMPTZ,
   updated_by  UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  lifecycle_state TEXT,
   CONSTRAINT event_config_pkey     PRIMARY KEY (id),
   CONSTRAINT event_config_singleton CHECK (id = 1)
 );

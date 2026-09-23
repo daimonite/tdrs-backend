@@ -5,3 +5,6 @@ backend-live.log
 
 .freebuff/
 logs/
+
+..freebuff-*
+*.log

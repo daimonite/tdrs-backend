@@ -71,6 +71,28 @@ npm run migrate:status    # see which SQL migrations are applied
 - Health: `GET /api/v1/health` — really pings the database; returns **503** when the DB is down
 - Contract tests: `BASE_URL=http://localhost:8800 npx jest tests/contract.test.js`
 
+### Frontend (canonical, in `tourderotary-dsm/`)
+
+```bash
+cd tourderotary-dsm
+npm install
+npm run dev -- -p 3100   # use 3100 if port 3000 is taken by another project
+```
+
+- Frontend: `http://localhost:3100` (set `NEXT_PUBLIC_SITE_URL` in `tourderotary-dsm/.env.local` to match)
+- To test from a phone on the same Wi-Fi: run with `-H 0.0.0.0` and use the PC's LAN IP in both `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_SITE_URL`
+- `NEXT_PUBLIC_API_BASE_URL` must point at the backend (e.g. `http://localhost:8800/api/v1`)
+
+### Seeded test accounts
+
+| Email | Role | Use for |
+|---|---|---|
+| `participant@gmail.com` | participant | dashboard, feed, fundraising, registration wizard |
+| `user@gmail.com` or `hqadmin@gmail.com` | **hq_admin** | the admin panel (`/admin/overview`) |
+| `admin@gmail.com` | admin (staff) | staff-level API access — **cannot** open the admin panel UI (requires `hq_admin`) |
+
+All seeded accounts use password `user1234`. Note the distinction: the admin panel requires role `hq_admin`; logging into it as plain `admin` shows a clear "wrong role" message — that is expected behaviour, not a bug.
+
 ### Key environment variables
 
 | Variable | Required | Purpose |
@@ -409,9 +431,26 @@ npm run migrate:status   # applied vs pending — the source of truth
 
 ```bash
 BASE_URL=http://localhost:8800 npx jest tests/contract.test.js   # 22 contract tests
-node verify_checklist.mjs                                        # 11-section E2E checklist
+node verify_checklist.mjs                                        # 13-check E2E checklist
 node test_new_features.mjs                                       # 10-check feature suite
 ```
+
+### Manual UI test pass (canonical frontend on :3100)
+
+Every flow below was clicked through in a real browser against this backend:
+
+| Flow | Expected result |
+|---|---|
+| Sign in as `participant@gmail.com` | lands on dashboard, lifecycle banner visible |
+| Sign out (top nav or profile page) | **redirects to `/login`** (fixed: previously stayed on the page looking logged-in) |
+| Dashboard journey steps, quick actions, share buttons | all navigate/render correctly |
+| Ticket page (pending registration) | Save/Share/Print correctly disabled until payment confirmed |
+| Feed: post, react (emoji toggle), comment | POST/INSERT through `posts` view → 201, counters update |
+| Fundraise: copy link, WhatsApp share, story editor | link copied, story saves through `registrations.story` |
+| Profile: edit name → Save | "Saving… → Saved", persisted to `profiles` |
+| Register a new user end-to-end | registration insert → trigger creates priced order → payment step (stops at PayMe boundary without live keys — expected) |
+| Admin panel as `user@gmail.com` | Overview stats, athlete detail, **Confirm payment** (→ `paid`+`confirmed`), **Assign bib** (→ persisted) all work |
+| Visit `/admin` as plain `admin@gmail.com` | clear "role is admin, not hq_admin" message |
 
 Verified live during development (see `.freebuff/run.md` for the full log): registration→order→ticket→bib chain; webhook signature/amount/idempotency negatives; community CRUD + moderation (report → admin hide → non-staff 403); teams captain-only edit; challenges; consent grant→withdraw; collectible issue→verify; CSV exports (header row even when empty); promo codes; admin endpoints; phase sync + archive write-block; rate-limit headers; pagination clamps. CI (`.github/workflows/ci.yml`) boots the server and runs the contract suite on push.
 
@@ -424,7 +463,7 @@ Honest, specific, testable — not vague "in progress":
 - **Fitness/Strava sync is unimplemented.** `GET /fitness/status`, `POST /fitness/strava/sync` return `501 NOT_IMPLEMENTED` — deferred pending third-party approval (Schedule A11). The one endpoint family that's upfront about not being done.
 - **Collectibles are off-chain.** Serial number + local verification hash, fully working including public verification. `on_chain_*` columns are schema scaffolding; no chain SDK exists here. Polygon certificate mode falls back to hash-only without `POLYGON_RPC_URL`.
 - **Certificates are hash-mode; no PDF.** No PDF library is installed. The Twibbon endpoint returns an **SVG name badge**, not a composited photo.
-- **Dead code:** `services/queueService.js` (references a non-existent `models/` dir), `config/redis.js` + the `redis`/`pg`/`pg-promise`/`bcrypt`/`jsonwebtoken`/`socket.io` dependencies — installed but unused. Finish or delete.
+- **Dead code:** `services/queueService.js` (references a non-existent `models/` dir), `config/redis.js` — installed but unused. Finish or delete. (The `redis`/`pg`/`bcrypt`/`jsonwebtoken`/`socket.io` dependencies were removed in September 2026.)
 - **External credentials are placeholders.** PayMe/Textify/Resend/Strava/Polygon all report `NOT_CONFIGURED` in `/health` until real keys land in `.env`; the code paths are built and waiting. The full payment→ticket→bib→SMS chain is unverifiable end-to-end until PayMe credentials arrive.
 - **In-memory rate limiting** resets on restart and doesn't share across instances (fine for the current single-instance deploy).
 

@@ -54,7 +54,8 @@ On the same screen, **Add Variable** for each (values from your local `.env`):
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | ⚠️ service-role = full DB access; secure the cPanel account |
 | `SUPABASE_ANON_KEY` | Token verification |
-| `ALLOWED_ORIGINS` | `https://tourderotary.tz,https://www.tourderotary.tz,https://<vercel-domain>,http://localhost:3000` |
+| `ALLOWED_ORIGINS` | `https://tourderotary.tz,https://www.tourderotary.tz,https://<vercel-domain>,http://localhost:3100` |
+| `TRUST_PROXY` | `1` (one cPanel/Nginx hop — keeps per-IP rate limiting accurate) |
 | `PAYME_API_KEY`, `PAYME_MERCHANT_CODE`, `PAYME_API_URL`, `PAYME_WEBHOOK_SECRET` | Webhook signatures become **mandatory** once the secret is set |
 | `TEXTIFY_API_KEY`, `TEXTIFY_SENDER_ID`, `TEXTIFY_API_URL` | SMS |
 | `RESEND_API_KEY`, `EMAIL_FROM`, `SUPPORT_EMAIL` | Email |
@@ -109,11 +110,45 @@ https://api.tourderotary.tz/api/v1/payments/payme/webhook
 3. Deploy → add the Vercel domain to backend `ALLOWED_ORIGINS`.
 4. DNS for the apex: either point `tourderotary.tz` A record at Vercel's `76.76.21.21`, or serve the frontend from the cPanel host and keep DNS as-is.
 
-Until the frontend is deployed, `http://localhost:3000` stays in `ALLOWED_ORIGINS` so local development keeps working against the live backend.
+Until the frontend is deployed, `http://localhost:3100` stays in `ALLOWED_ORIGINS` so local development keeps working against the live backend (the canonical frontend dev server runs on port 3100).
 
 ---
 
-## 5. Gotchas that bite everyone
+## 5. Security, rate limiting & load balancing
+
+### What the API enforces out of the box
+
+| Layer | Where | What it does |
+|---|---|---|
+| Security headers | `index.js` (`helmet`) | Standard header set on every response |
+| CORS allowlist | `index.js` | Only origins in `ALLOWED_ORIGINS` get CORS headers — add the Vercel domain + `https://tourderotary.tz` at deploy time |
+| Auth | `middleware/auth.js` | Verifies each caller's Supabase JWT with Supabase itself; role resolved from `profiles`, never from client headers |
+| RBAC | `middleware/rbac.js` | Route guards on admin/sponsor/etc. endpoints; cannot be bypassed with spoofed headers |
+| Webhook auth | `controllers/paymentController.js` | PayMe callback HMAC (`x-payme-signature`) — **fails closed** when `PAYME_WEBHOOK_SECRET` is set, so set that secret before going live |
+| Error hygiene | `middleware/errorHandler.js` | 5xx internals are logged but never returned to clients in production |
+
+### Rate limiting (per client IP)
+
+| Tier | Limit | Covers |
+|---|---|---|
+| Global baseline | 300 req/min | Every route (defense-in-depth, `index.js`) |
+| Hot reads | 300 req/min | Feed/list endpoints (`middleware/apiHygiene.js`) |
+| Community writes | 20 req/min | Posts, comments, reactions |
+| Heavy mutations | 10 req/min | Teams, stories, challenges |
+| Payments | 10 initiate-or-retry / 15 min, 30 status / 15 min | Guest checkout abuse (order-number enumeration, USSD spam) |
+| PayMe webhook | 60 req/min | Server-to-server callback retries |
+
+### Load balancing & scaling
+
+- **Set `TRUST_PROXY=1`** (already the default) so per-IP rate limiting keys on the real client IP behind cPanel/Nginx or a load balancer. Set `TRUST_PROXY=false` only if the Node process is exposed directly.
+- **Health check for LB probes:** `GET /api/v1/health` returns `200` with a real Supabase round-trip, and **`503` when the database is down** — point your balancer's health monitor there.
+- **Stateless auth:** JWT bearer/cookie — **no sticky sessions needed**; any round-robin works.
+- **Process manager:** `pm2 start ecosystem.config.cjs && pm2 save` (single instance; `kill_timeout` matches the app's 10 s graceful drain on SIGTERM).
+- **Scaling out:** run more single-instance nodes behind the balancer — but first make the communication dispatcher safe for concurrent workers (it currently does select-then-update with no `FOR UPDATE SKIP LOCKED` claiming, so two processes could double-send SMS/email). Recommended: an atomic `claim_due_communications(limit)` RPC in Supabase.
+
+---
+
+## 6. Gotchas that bite everyone
 
 - **DNS propagation** for the new subdomain can take up to a few hours; test from a phone on mobile data if it seems dead locally.
 - **404 on the subdomain before Step 5** is normal — the folder is empty until code lands.
@@ -124,12 +159,14 @@ Until the frontend is deployed, `http://localhost:3000` stays in `ALLOWED_ORIGIN
 
 ---
 
-## 6. Post-deploy checklist
+## 7. Post-deploy checklist
 
 - [ ] `/api/v1/health` returns healthy over HTTPS
 - [ ] AutoSSL certificates active on both domains
 - `npm run migrate:status` — no pending
 - [ ] CORS preflight 204 from the frontend origin
+- [ ] `PAYME_WEBHOOK_SECRET` set (webhook signature check fails closed without it)
+- [ ] `ALLOWED_ORIGINS` contains only real frontend origins (no `localhost`)
 - [ ] PayMe webhook URL set in PayMe dashboard
 - [ ] Test registration payment on a real phone (USSD prompt → webhook → ticket + bib)
 - [ ] cPanel password rotated

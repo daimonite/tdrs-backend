@@ -5,6 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 
 // Import Tour de Rotary DSM Route Modules
 import activityRoutes from './routes/activityRoutes.js';
@@ -49,6 +50,19 @@ import { supabase } from './config/supabase.js';
 
 const app = express();
 
+// ── Proxy awareness (load balancing readiness) ──────────────────────────────
+// Behind cPanel/Nginx or a load balancer, req.ip is the proxy's IP unless
+// Express is told to trust X-Forwarded-For. Without this, every client looks
+// like the proxy and the rate limiters would throttle ALL users collectively
+// (express-rate-limit keys on req.ip). TRUST_PROXY is the number of proxy
+// hops in front of this process; set TRUST_PROXY=false when the Node process
+// is exposed directly. One hop is the right default for cPanel/Nginx.
+const trustProxyRaw = String(process.env.TRUST_PROXY ?? '1').trim().toLowerCase();
+if (trustProxyRaw !== 'false' && trustProxyRaw !== '0') {
+  const hops = parseInt(trustProxyRaw, 10);
+  app.set('trust proxy', Number.isFinite(hops) && hops > 0 ? hops : 1);
+}
+
 // Request logging — every request flows through winston (audit gap 22),
 // with >=400 as warn and >=500 as error in logs/error.log.
 app.use(morganMiddleware);
@@ -79,6 +93,22 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// ── Global baseline rate limiter ────────────────────────────────────────────
+// The hot social/community/payment routes carry their own tighter tiers
+// (middleware/apiHygiene.js, routes/paymentRoutes.js), but ~two dozen route
+// files have no per-route limiter. This baseline caps every IP at 300
+// requests/minute across the whole API — generous enough that no real user
+// flow can hit it, tight enough that scrape/DoS loops are blunted before
+// they reach Supabase.
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Slow down.' }
+});
+app.use(globalLimiter);
 
 // Root & Health Check Endpoints
 app.get('/', (req, res) => {

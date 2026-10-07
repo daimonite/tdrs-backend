@@ -147,8 +147,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO public.race_categories (slug, name, format, swim_distance_m, bike_distance_m, run_distance_m, wave_start_time, entry_fee_tsh, max_participants, description)
 VALUES
   ('olympic-individual', 'Olympic Distance Triathlon', 'individual', 1500, 40000, 10000, '06:00:00', 75000, 500, 'The premier test: 1.5km swim, 40km bike, 10km run across Dar es Salaam.'),
-  ('sprint-individual', 'Sprint Distance Triathlon', 'individual', 750, 20000, 5000, '06:45:00', 50000, 600, 'Fast and accessible: 750m swim, 20km bike, 5km run.'),
-  ('triathlon-relay', 'Team Relay (3 Athletes)', 'relay', 1500, 40000, 10000, '07:15:00', 120000, 200, 'Form a team of 3: one swimmer, one cyclist, one runner.')
+  ('sprint-individual', 'Sprint Distance Triathlon', 'individual', 750, 20000, 5000, '06:45:00', 45000, 600, 'Fast and accessible: 750m swim, 20km bike, 5km run.'),
+  ('triathlon-relay', 'Team Relay (3 Athletes)', 'relay', 1500, 40000, 10000, '07:15:00', 90000, 200, 'Form a team of 3: one swimmer, one cyclist, one runner.')
 ON CONFLICT (slug) DO UPDATE
 SET entry_fee_tsh = EXCLUDED.entry_fee_tsh,
     name = EXCLUDED.name,

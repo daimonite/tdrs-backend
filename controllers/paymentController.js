@@ -105,6 +105,26 @@ export const initiatePayment = async (req, res) => {
       // Donation / standalone flow: anchor the charge with a pending order the
       // webhook can complete via metadata (donation_id).
       if (!reconciled) {
+        // Guest donors sign nothing and carry no profile — orders.profile_id is
+        // NOT NULL, so anchor the order to the campaign owner (the donation is
+        // to their page; referral credit and webhook lookups stay coherent).
+        // The donor's own identity lives in customer_email/billing fields and
+        // metadata.donation_id.
+        if (!payerProfileId && typeof orderMetadata.donation_id === 'string' && orderMetadata.donation_id) {
+          const { data: donationRow } = await supabase
+            .from('donations')
+            .select('id, campaign_id')
+            .eq('id', orderMetadata.donation_id)
+            .maybeSingle();
+          if (donationRow?.campaign_id) {
+            const { data: campaignRow } = await supabase
+              .from('fundraising_campaigns')
+              .select('participant_id')
+              .eq('id', donationRow.campaign_id)
+              .maybeSingle();
+            payerProfileId = campaignRow?.participant_id || null;
+          }
+        }
         orderNumber = `TDR-2026-${descriptionTag}-${Math.floor(1000 + Math.random() * 9000)}`;
 
         const { error: orderErr } = await supabase
